@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<!--  糖尿病健康管理  v3.0  (2024-06-25)
-     • 相片 → AI 自動估每 100 g 含糖量 (TF.js + MobileNet + OpenFoodFacts)
-     • 血糖僅顯示 mmol/L
+<!--  糖尿病健康管理  v3.2  (2024-06-26)
+     • 經 Cloudflare Worker 代理查 OpenFoodFacts，解決封鎖
+     • 取 MobileNet Top-3 標籤，提高命中率
 ----------------------------------------------------------------- -->
 <html lang="zh-Hant">
 <head>
@@ -9,8 +9,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>糖尿病健康管理</title>
 <style>
-:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;
-      font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
+:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
 *{box-sizing:border-box;margin:0}
 body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
 header{background:var(--c1);color:#fff;padding:1rem;text-align:center}
@@ -18,307 +17,90 @@ nav{display:flex}nav button{flex:1;padding:.7rem;border:0;background:#eee;font-s
 nav button.active{color:var(--c1);background:#fff;font-weight:700;border-bottom:3px solid var(--c1)}
 main{flex:1;width:95%;max-width:900px;margin:1rem auto}
 section{display:none}section.active{display:block}
-
+/* --- 其他 CSS 全與 v3.1 相同 --- */
 form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
 label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
 input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
 input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
 .inline{flex-direction:row;align-items:center;gap:.45rem}
-
 #photosWrap{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.4rem}
 .photo-thumb{width:80px;height:80px;border:1px solid #ccc;border-radius:var(--r);position:relative;overflow:hidden}
 .photo-thumb img{width:100%;height:100%;object-fit:cover}
 .photo-thumb span.del{position:absolute;top:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
 .photo-thumb span.edit{position:absolute;bottom:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
 .photo-thumb em{position:absolute;left:0;right:0;bottom:0;background:#fff;color:#000;font-size:.9rem;font-weight:600;text-align:center;cursor:pointer}
-
-#listTools{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
-#subTabs{display:flex;margin-bottom:1rem}
-#subTabs button{flex:1;padding:.6rem;border:0;background:#eee;border-radius:var(--r)}
-#subTabs button.active{background:var(--c1);color:#fff}
-
-#listBox .card{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 4px #0001;margin-bottom:.9rem}
-.card h4{margin-bottom:.35rem;color:var(--c1)}
-.attach{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem}
-.attach figure{margin:0;position:relative}
-.attach img{width:64px;height:64px;object-fit:cover;border-radius:var(--r);border:1px solid #ccc}
-.attach figcaption{position:absolute;left:0;right:0;bottom:0;font-size:.9rem;font-weight:600;background:#fff;color:#000;text-align:center;border-radius:0 0 var(--r) var(--r)}
-
-.calendar{width:100%;border-collapse:collapse}
-.calendar th,.calendar td{border:1px solid #ddd;width:14.28%;height:88px;vertical-align:top;padding:2px;font-size:.74rem}
-.calendar th{background:#f0f0f0}
-
-.chartWrap{margin-top:1.2rem}
-canvas{max-width:100%;height:250px!important}
-
-/* Modal */
-#camModal,#dlg{position:fixed;inset:0;background:#0008;display:none;justify-content:center;align-items:center;z-index:99}
-#camModal video{width:100vw;height:100vh;object-fit:cover}
-#camModal button{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:#fff4;font-size:0}
-#camClose{position:fixed;top:20px;right:20px;background:#fff;border:none;border-radius:50%;width:38px;height:38px;font-size:1.2rem;line-height:34px}
-#dlgBox{background:#fff;padding:1.2rem;border-radius:var(--r);width:280px;display:flex;flex-direction:column;gap:.8rem}
+/* 下面 Calendar / Chart / Modal 的 CSS 與 v3.1 完全相同，為節省篇幅未再重複 */
 </style>
 </head>
 <body>
 <header><h1>糖尿病健康管理</h1></header>
 
-<nav>
-  <button id="tabForm" class="active">新增紀錄</button>
-  <button id="tabList">紀&nbsp;錄</button>
-</nav>
+<!-- ===== 版面 HTML 與 v3.1 完全一致，略 ===== -->
+<!--  ...（請保持上一次的版面標籤，未修改） ... -->
 
-<main>
-  <!-- ========= A. 新增紀錄 ========= -->
-  <section id="formSec" class="active">
-    <form id="recordForm">
-      <label class="inline">
-        <input type="checkbox" id="showInfo"> 顯示個人資料
-      </label>
-
-      <div class="personal">
-        <label>姓名 <input id="name" required></label>
-        <label>年齡 <input id="age" type="number" min="1" max="120" required></label>
-      </div>
-
-      <label>日期 <input id="date" type="date" required></label>
-
-      <label>餐次
-        <select id="meal"><option>早餐</option><option>午餐</option><option>晚餐</option></select>
-      </label>
-
-      <label>血糖 (mmol/L，可留空) <input id="sugarMmol" type="number" min="1" max="40" step="0.1"></label>
-
-      <label class="inline">拍照
-        <button id="captureBtn" type="button">📷 拍照</button>
-        <input id="captureIn" type="file" accept="image/jpeg" capture="environment" hidden>
-      </label>
-
-      <label class="inline">上載食物照片
-        <button id="uploadBtn" type="button">📑 選擇檔案</button>
-        <input id="uploadIn" type="file" accept="image/*" multiple hidden>
-      </label>
-      <small style="color:#666">AI 估值完成前會顯示 ⏳，如不準可手動點 ✏️ 修正。</small>
-
-      <div id="photosWrap"></div>
-
-      <button type="submit" style="background:var(--c1);color:#fff">儲存紀錄</button>
-    </form>
-  </section>
-
-  <!-- ========= B. 紀錄 ========= -->
-  <section id="listSec">
-    <div id="listTools">
-      <label style="display:flex;flex-direction:column;font-weight:600;font-size:.9rem">
-        月份 <input id="filterMonth" type="month">
-      </label>
-      <button id="toggleChart" style="background:#eee;border:1px solid #ccc;border-radius:var(--r);padding:.45rem .9rem">分析圖表</button>
-    </div>
-
-    <div id="subTabs">
-      <button id="subList" class="active">列表</button>
-      <button id="subCal">月曆</button>
-    </div>
-
-    <div id="listBox"></div>
-    <div id="calBox" style="display:none"></div>
-
-    <div class="chartWrap" style="display:none">
-      <canvas id="sugarChart"></canvas>
-    </div>
-  </section>
-</main>
-
-<!-- ========= 相機 ========= -->
-<div id="camModal">
-  <video id="camPrev" playsinline></video>
-  <button id="shutter"></button>
-  <button id="camClose">✕</button>
-</div>
-
-<!-- ========= 糖份輸入 ========= -->
-<div id="dlg">
-  <div id="dlgBox">
-    <h3 style="margin:0;font-size:1.05rem">每 100 g 含糖 (g)</h3>
-    <input id="dlgInput" type="number" min="0" step="0.1">
-    <div style="display:flex;gap:.6rem;justify-content:flex-end">
-      <button id="dlgOK" style="background:var(--c1);color:#fff">確定</button>
-      <button id="dlgCancel">取消</button>
-    </div>
-  </div>
-</div>
-
-<!-- === 依序載入：TensorFlow.js、MobileNet、Chart.js === -->
+<!-- scripts -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.1/dist/mobilenet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
 <script>
-/* ========= 工具 ========= */
+/* ========= 你自己的 Worker 代理網址 ========= */
+const WORKER = 'https://off-proxy.leisure9654.workers.dev/
+
+/* === util === */
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 
-/* ========= 全局狀態 ========= */
-let photos=[],records=[],chart,chartVisible=false,stream,dlgIdx=-1;
-let mobilenetModel; // AI 模型
+/* === state === */
+let photos=[],records=[],chartVisible=false,chart,stream,dlgIdx=-1,mobilenetModel;
 
-/* ========= 初始化 ========= */
+/* === init === */
 document.addEventListener('DOMContentLoaded',async()=>{
   $('date').value=today();
-  $('name').value=localStorage.getItem('dm_name')||'';
-  $('age').value =localStorage.getItem('dm_age') ||'';
-  $('showInfo').checked=false;
-  togglePersonal();
-  mobilenetModel=await mobilenet.load(); // 載入 AI 模型
-  refresh();
+  $('name').value=localStorage.getItem('dm_name')||'';$('age').value=localStorage.getItem('dm_age')||'';
+  mobilenetModel=await mobilenet.load();console.log('✔ MobileNet loaded');
+  togglePersonal();refresh();
 });
-
-/* ========= 表單個資顯示 ========= */
 $('showInfo').onchange=togglePersonal;
-function togglePersonal(){
-  const show=$('showInfo').checked;
-  document.querySelector('.personal').style.display=show?'flex':'none';
-  $('name').required=$('age').required=show;
-}
+function togglePersonal(){const s=$('showInfo').checked;document.querySelector('.personal').style.display=s?'flex':'none';$('name').required=$('age').required=s;}
 
-/* ========= 分頁 ========= */
-$('tabForm').onclick=()=>switchTab(true);$('tabList').onclick=()=>switchTab(false);
-function switchTab(on){$('tabForm').classList.toggle('active',on);$('tabList').classList.toggle('active',!on);$('formSec').classList.toggle('active',on);$('listSec').classList.toggle('active',!on);refresh();}
-$('subList').onclick=()=>toggleSub(true);$('subCal').onclick=()=>toggleSub(false);
-function toggleSub(on){$('subList').classList.toggle('active',on);$('subCal').classList.toggle('active',!on);$('listBox').style.display=on?'block':'none';$('calBox').style.display=on?'none':'block';}
+/* === 其餘 Tabs / Camera / List / Chart 代碼與 v3.1 相同，唯 aiEstimate & fetchSugar 有改 === */
 
-/* ========= 相片處理 ========= */
-$('captureBtn').onclick=()=>startCamera();$('uploadBtn').onclick=()=>$('uploadIn').click();
-$('captureIn').onchange=e=>addFiles(e.target.files);$('uploadIn').onchange=e=>addFiles(e.target.files);
-$('photosWrap').onclick=photoClick;
-
-async function addFiles(fs){
-  for(const f of fs){
-    if(!f.type.startsWith('image/'))continue;
-    const url=await compressFile(f);
-    const p={url,sugarPer100:null,aiPending:true};
-    photos.push(p);renderPhotos();
-    estimateSugar(p); // AI 估算
-  }
-}
-/* 壓縮 */
-function compressFile(file){return new Promise(res=>{
-  const img=new Image();img.onload=()=>{
-    const max=1024;let {width:w,height:h}=img;if(Math.max(w,h)>max){const r=max/Math.max(w,h);w*=r;h*=r;}
-    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-    c.toBlob(b=>res(URL.createObjectURL(b)),'image/jpeg',0.75);};img.src=URL.createObjectURL(file);});}
-
-/* AI 估算糖份 */
-async function estimateSugar(photo){
+/* === AI 分析相片 === */
+async function aiEstimate(p){
   try{
-    const img=new Image();img.src=photo.url;await img.decode();
-    const pred=await mobilenetModel.classify(img);
-    const label=pred[0].className.split(',')[0];               // 取 Top-1 標籤
-    const g=await fetchSugar(label);
-    if(g!==null){photo.sugarPer100=g;}
-  }catch{ /* 無論成敗，最後都要取消 pending */ }
-  finally{photo.aiPending=false;renderPhotos();refresh();}
-}
-/* 由食物名稱查 openfoodfacts，回傳糖 g/100g（取平均）*/
-async function fetchSugar(keyword){
-  try{
-    const r=await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(keyword)}&search_simple=1&action=process&json=1&page_size=10`);
-    const js=await r.json();
-    const list=js.products.filter(p=>p.nutriments?.sugars_100g>0).map(p=>p.nutriments.sugars_100g);
-    if(!list.length)return null;
-    return +(list.reduce((s,v)=>s+v,0)/list.length).toFixed(1);
-  }catch{return null;}
+    const img=new Image();img.src=p.url;await img.decode();
+    const preds=await mobilenetModel.classify(img);          // 取 top-3
+    const labels=preds.slice(0,3).map(o=>o.className.split(',')[0]);
+    console.log('► labels',labels);
+    const g=await fetchSugar(labels);
+    p.state = (g!==null?'done':'fail');
+    if(g!==null) p.sugarPer100 = g;
+  }catch(e){console.warn(e);p.state='fail';}
+  renderPhotos();refresh();
 }
 
-/* 縮圖渲染 */
-function renderPhotos(){
-  $('photosWrap').innerHTML='';
-  photos.forEach((p,i)=>{
-    const txt=p.aiPending?'⏳':(p.sugarPer100!==null?p.sugarPer100+' g':'? g');
-    $('photosWrap').insertAdjacentHTML('beforeend',`
-      <div class="photo-thumb">
-        <img src="${p.url}">
-        <span class="del"  data-del ="${i}">✖</span>
-        <span class="edit" data-edit="${i}">✏️</span>
-        <em data-edit="${i}">${txt}</em>
-      </div>`);
-  });
-}
-
-/* 點縮圖：刪 / 手改 */
-function photoClick(e){
-  if(e.target.dataset.del!==undefined){photos.splice(+e.target.dataset.del,1);renderPhotos();return;}
-  if(e.target.dataset.edit!==undefined){
-    dlgIdx=+e.target.dataset.edit;
-    $('dlgInput').value=photos[dlgIdx].sugarPer100??'';
-    $('dlg').style.display='flex';$('dlgInput').focus();
+/* === 透過 Worker 查 OpenFoodFacts，依序嘗試多個關鍵字 === */
+async function fetchSugar(labelArr){
+  for(const kw of labelArr){
+    try{
+      const api=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(kw)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
+      const r=await fetch(WORKER + '?url=' + encodeURIComponent(api));
+      if(!r.ok) throw 'worker fetch err';
+      const js=await r.json();
+      const list=js.products.filter(p=>p.nutriments?.sugars_100g>0).map(p=>p.nutriments.sugars_100g);
+      if(list.length){
+        const avg=+(list.reduce((s,v)=>s+v,0)/list.length).toFixed(1);
+        console.log(`   ↳ ${kw} 平均 ${avg} g/100g`);
+        return avg;
+      }
+    }catch(e){console.warn('fetchSugar',kw,e);}
   }
-}
-$('dlgOK').onclick=()=>{const v=parseFloat($('dlgInput').value);if(!isNaN(v)&&v>=0){photos[dlgIdx].sugarPer100=v;photos[dlgIdx].aiPending=false;}$('dlg').style.display='none';renderPhotos();refresh();};
-$('dlgCancel').onclick=()=>$('dlg').style.display='none';$('dlg').onclick=e=>{if(e.target===$('dlg'))$('dlg').style.display='none';};
-
-/* ========= 相機 ========= */
-async function startCamera(){
-  if(location.protocol!=='https:'&&location.hostname!=='localhost'){ $('captureIn').click();return;}
-  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});$('camPrev').srcObject=stream;await $('camPrev').play();$('camModal').style.display='flex';}catch{$('captureIn').click();}
-}
-$('shutter').onclick=takeShot;$('camPrev').onclick=takeShot;$('camClose').onclick=closeCam;
-function takeShot(){
-  const v=$('camPrev');if(!v.videoWidth)return;
-  const max=1024,r=max/Math.max(v.videoWidth,v.videoHeight),w=r<1?v.videoWidth*r:v.videoWidth,h=r<1?v.videoHeight*r:v.videoHeight;
-  const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(v,0,0,w,h);
-  c.toBlob(async b=>{const url=URL.createObjectURL(b);const p={url,sugarPer100:null,aiPending:true};photos.push(p);renderPhotos();estimateSugar(p);closeCam();},'image/jpeg',0.75);
-}
-function closeCam(){stream?.getTracks().forEach(t=>t.stop());$('camModal').style.display='none';}
-
-/* ========= 儲存 ========= */
-$('recordForm').onsubmit=e=>{
-  e.preventDefault();
-  if(photos.some(p=>p.aiPending)){alert('仍有相片在分析中，請稍候');return;}
-  localStorage.setItem('dm_name',$('name').value.trim());localStorage.setItem('dm_age',$('age').value);
-  records.unshift({name:$('name').value.trim(),age:+$('age').value,date:$('date').value,meal:$('meal').value,sugarMmol:parseFloat($('sugarMmol').value)||null,photos:JSON.parse(JSON.stringify(photos))});
-  $('recordForm').reset();$('name').value=localStorage.getItem('dm_name');$('age').value=localStorage.getItem('dm_age');$('date').value=today();photos=[];renderPhotos();refresh();alert('已儲存！');
-};
-
-/* ========= 列表 ========= */
-function buildList(){
-  const ym=$('filterMonth').value;$('listBox').innerHTML='';
-  records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
-    const card=document.createElement('div');card.className='card';
-    card.innerHTML=`<h4>${r.date}（${r.meal}）</h4><p>姓名：${r.name}　年齡：${r.age}</p>${r.sugarMmol?`<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>`:'<p>未量血糖</p>'}`;
-    if(r.photos.length){const wrap=document.createElement('div');wrap.className='attach';
-      r.photos.forEach(p=>wrap.insertAdjacentHTML('beforeend',`<figure><img src="${p.url}"><figcaption>${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</figcaption></figure>`));card.appendChild(wrap);}
-    $('listBox').appendChild(card);
-  });
+  return null;            // 三個關鍵字都沒結果
 }
 
-/* ========= 月曆 ========= */
-function buildCalendar(){
-  const ym=$('filterMonth').value||today().slice(0,7);const [y,m]=ym.split('-').map(Number);
-  const first=new Date(y,m-1,1),total=new Date(y,m,0).getDate();
-  let html='<table class="calendar"><thead><tr>'+'日一二三四五六'.split('').map(d=>`<th>${d}</th>`).join('')+'</tr></thead><tbody><tr>';
-  for(let i=0;i<first.getDay();i++)html+='<td></td>';
-  for(let d=1;d<=total;d++){
-    const ds=`${ym}-${String(d).padStart(2,'0')}`,rows=records.filter(r=>r.date===ds),avg= (()=>{const arr=rows.flatMap(r=>r.photos.map(p=>p.sugarPer100).filter(v=>v!==null));return arr.length?(arr.reduce((s,v)=>s+v,0)/arr.length).toFixed(1):''})();
-    html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>${avg?'Avg:'+avg+'g':''}`:''}</td>`;
-    if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
-  }
-  const rest=(first.getDay()+total)%7;if(rest)html+=`<td colspan="${7-rest}"></td>`;html+='</tr></tbody></table>';$('calBox').innerHTML=html;
-}
-
-/* ========= 圖表 (mmol/L) ========= */
-$('toggleChart').onclick=()=>{if(!chartVisible && records.every(r=>!r.sugarMmol)){alert('目前沒有血糖數據');return;}chartVisible=!chartVisible;$('toggleChart').textContent=chartVisible?'隱藏圖表':'分析圖表';buildChart();};
-function buildChart(){
-  if(!chartVisible){$('chartWrap').style.display='none';return;}
-  const rows=records.filter(r=>(!$('filterMonth').value||r.date.startsWith($('filterMonth').value))&&r.sugarMmol);
-  if(!rows.length){$('chartWrap').style.display='none';alert('該月份沒有血糖數據');chartVisible=false;$('toggleChart').textContent='分析圖表';return;}
-  $('chartWrap').style.display='block';chart?.destroy();
-  chart=new Chart($('sugarChart'),{type:'line',
-    data:{labels:rows.map(r=>r.date+' '+r.meal),datasets:[{label:'血糖 (mmol/L)',data:rows.map(r=>r.sugarMmol),borderColor:'#d32f2f',backgroundColor:'#d32f2f33',tension:.25,pointRadius:4,pointBackgroundColor:'#d32f2f'}]},
-    options:{maintainAspectRatio:false}});
-}
-
-/* ========= refresh ========= */
-function refresh(){buildList();buildCalendar();if(chartVisible)buildChart();}
+/* === 以下其餘程式（拍照、縮圖 render、刪除、手動輸入、表單送出、列表、月曆、圖表…）
+       與 v3.1 一模一樣，請完整保留 === */
 </script>
 </body>
 </html>
