@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <!--  =======================================================
-      糖尿病健康管理  v1.6   (2024-06-14)
-      • 圖表按鈕：無數據時會提示，避免只改字不顯示
-      • 其他功能：個資遮蔽 / 拍照 + 多檔上傳 / 子分頁月曆
+      糖尿病健康管理  v1.7   (2024-06-15)
+      • 📷 拍照：先用 getUserMedia，失敗再 fallback input capture
+      • 新增 cam-modal (全螢幕預覽)、ESC / 關閉按鈕
     ======================================================= -->
 <html lang="zh-Hant">
 <head>
@@ -10,7 +10,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>糖尿病健康管理</title>
 <style>
-:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
+:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;
+      font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
 *{box-sizing:border-box;margin:0}
 body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
 header{background:var(--c1);color:#fff;padding:1rem;text-align:center}
@@ -46,11 +47,20 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
 
 .chartWrap{margin-top:1.5rem}
 canvas{max-width:100%}
+
+/* ======= 相機全螢幕 modal ======= */
+#camModal{position:fixed;inset:0;background:#000d;display:none;justify-content:center;align-items:center;z-index:99}
+#camModal video{width:100vw;height:100vh;object-fit:cover}
+#camModal button{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
+                 width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:#fff4;font-size:0}
+#camClose{position:fixed;top:20px;right:20px;background:#fff;border:none;
+          border-radius:50%;width:38px;height:38px;font-size:1.2rem;line-height:34px}
 </style>
 </head>
 <body>
 <header><h1>糖尿病健康管理</h1></header>
 
+<!-- ===== tabs ===== -->
 <nav>
   <button id="tabForm" class="active">新增紀錄</button>
   <button id="tabList">紀&nbsp;錄</button>
@@ -93,7 +103,7 @@ canvas{max-width:100%}
       <!-- 食物照片 -->
       <label class="inline">拍照
         <button id="captureBtn" type="button">📷 拍照</button>
-        <input id="captureIn" type="file" accept="image/*" capture="environment" style="display:none">
+        <input id="captureIn" type="file" accept="image/jpeg" capture="environment" style="display:none">
       </label>
 
       <label class="inline">上傳食物照片
@@ -132,38 +142,49 @@ canvas{max-width:100%}
   </section>
 </main>
 
+<!-- ========= 相機 Modal ========= -->
+<div id="camModal">
+  <video id="camPrev" playsinline></video>
+  <button id="shutter"></button>
+  <button id="camClose">✕</button>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 /* ---------- 全局變數 ---------- */
 let photos=[], records=[], chart, chartVisible=false;
+let stream;                      // MediaStream for camera preview
 
-/* ---------- DOM  ---------- */
-const dateInput=document.getElementById('date');
-const showInfoChk=document.getElementById('showInfo');
-const capBtn=document.getElementById('captureBtn');
-const upBtn=document.getElementById('uploadBtn');
-const capIn=document.getElementById('captureIn');
-const upIn=document.getElementById('uploadIn');
-const photosWrap=document.getElementById('photosWrap');
+/* ---------- DOM 快捷 ---------- */
+const $=id=>document.getElementById(id);
 
-const tabForm=document.getElementById('tabForm');
-const tabList=document.getElementById('tabList');
-const formSec=document.getElementById('formSec');
-const listSec=document.getElementById('listSec');
+/* --- 表單區 DOM --- */
+const dateInput=$('date');
+const showInfoChk=$('showInfo');
+const capBtn=$('captureBtn'), upBtn=$('uploadBtn');
+const capIn=$('captureIn'),   upIn=$('uploadIn');
+const photosWrap=$('photosWrap');
 
-const subList=document.getElementById('subList');
-const subCal=document.getElementById('subCal');
-const listBox=document.getElementById('listBox');
-const calBox=document.getElementById('calBox');
+/* --- 主分頁 DOM --- */
+const tabForm=$('tabForm'), tabList=$('tabList');
+const formSec=$('formSec'), listSec=$('listSec');
 
-const filterMonth=document.getElementById('filterMonth');
-const toggleChartBtn=document.getElementById('toggleChart');
-const chartWrap=document.querySelector('.chartWrap');
+/* --- 子分頁 DOM --- */
+const subList=$('subList'), subCal=$('subCal');
+const listBox=$('listBox'), calBox=$('calBox');
+
+/* --- 工具列 DOM --- */
+const filterMonth=$('filterMonth');
+const toggleChartBtn=$('toggleChart'), chartWrap=document.querySelector('.chartWrap');
+
+/* --- 相機 Modal DOM --- */
+const camModal=$('camModal'), camPrev=$('camPrev');
+const shutter=$('shutter'),   camClose=$('camClose');
 
 /* ---------- 初始化 ---------- */
 dateInput.value=new Date().toISOString().split('T')[0];
 
-/* ---------- 分頁 ---------- */
+/* ---------- 分頁切換 ---------- */
 tabForm.onclick=()=>switchTab(true);
 tabList.onclick=()=>switchTab(false);
 function switchTab(showForm){
@@ -182,29 +203,29 @@ function toggleSub(listOn){
   calBox.style.display =listOn?'none':'block';
 }
 
-/* ---------- 相片 --------- */
-capBtn.onclick=()=>capIn.click();
+/* ---------- 相片處理 ---------- */
+capBtn.onclick=handleCaptureClick;
 upBtn.onclick =()=>upIn.click();
-capIn.onchange=e=>{photos=[];addFiles(e.target.files);};
+capIn.onchange=e=>{photos=[];addFiles(e.target.files);};          // 單張覆蓋
 upIn.onchange =e=>addFiles(e.target.files);
 function addFiles(files){[...files].forEach(f=>photos.push({url:URL.createObjectURL(f),name:f.name}));renderPhotos();}
 function renderPhotos(){
   photosWrap.innerHTML='';
   photos.forEach((p,i)=>{
     const d=document.createElement('div');d.className='photo-thumb';
-    d.innerHTML=`<img src="${p.url}"><span data-i="${i}">✖</span>`;photosWrap.appendChild(d);
+    d.innerHTML=`<img src="${p.url}" alt=""><span data-i="${i}">✖</span>`;photosWrap.appendChild(d);
   });
 }
 photosWrap.onclick=e=>{if(e.target.tagName==='SPAN'){photos.splice(+e.target.dataset.i,1);renderPhotos();}};
 
 /* ---------- 儲存紀錄 ---------- */
-document.getElementById('recordForm').onsubmit=e=>{
+$('recordForm').onsubmit=e=>{
   e.preventDefault();
-  records.push({
-    name:document.getElementById('name').value.trim(),
-    age:+document.getElementById('age').value,
+  records.unshift({                         // 最新排最前
+    name:$('name').value.trim(),
+    age:+$('age').value,
     date:dateInput.value,
-    meal:document.getElementById('meal').value,
+    meal:$('meal').value,
     sugar:getNum('sugar'),
     sugarEst:getNum('sugarEst'),
     photos:[...photos]
@@ -213,16 +234,12 @@ document.getElementById('recordForm').onsubmit=e=>{
   dateInput.value=new Date().toISOString().split('T')[0];
   alert('已儲存！');
 };
-function getNum(id){const v=document.getElementById(id).value;return v===''?null:+v;}
+function getNum(id){const v=$(id).value;return v===''?null:+v;}
 
 /* ---------- 工具列 ---------- */
 filterMonth.onchange=refresh;
 toggleChartBtn.onclick=()=>{
-  if(!chartVisible){
-    // 準備開啟 → 先檢查是否有可畫的資料
-    const rows=getChartRows();
-    if(!rows.length){alert('目前沒有可分析的數據');return;}
-  }
+  if(!chartVisible&&getChartRows().length===0){alert('目前沒有可分析的數據');return;}
   chartVisible=!chartVisible;
   toggleChartBtn.textContent=chartVisible?'隱藏圖表':'分析圖表';
   buildChart();
@@ -258,16 +275,15 @@ function buildList(){
 function buildCalendar(){
   const ym=filterMonth.value||new Date().toISOString().slice(0,7);
   const [y,m]=ym.split('-').map(Number);
-  const first=new Date(y,m-1,1);
-  const total=new Date(y,m,0).getDate();
+  const first=new Date(y,m-1,1), total=new Date(y,m,0).getDate();
   let html='<table class="calendar"><thead><tr>';
   '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
 
   for(let i=0;i<first.getDay();i++)html+='<td></td>';
   for(let d=1;d<=total;d++){
     const ds=`${ym}-${String(d).padStart(2,'0')}`;
-    const rows=records.filter(r=>r.date===ds);
-    const avg=rows.filter(r=>r.sugar).reduce((s,v)=>s+v.sugar,0)/(rows.filter(r=>r.sugar).length||1);
+    const rows=records.filter(r=>r.date===ds), sugars=rows.filter(r=>r.sugar);
+    const avg=sugars.reduce((s,v)=>s+v.sugar,0)/(sugars.length||1);
     html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>Avg:${avg?avg.toFixed(1):'-'}`:''}</td>`;
     if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
   }
@@ -292,8 +308,8 @@ function buildChart(){
   const labels=rows.map(r=>r.date+' '+r.meal);
   const data=rows.map(r=>r.sugar!==null?r.sugar:r.sugarEst);
   chartWrap.style.display='block';
-  if(chart)chart.destroy();
-  chart=new Chart(document.getElementById('sugarChart'),{
+  chart?.destroy();
+  chart=new Chart($('sugarChart'),{
     type:'line',
     data:{labels,datasets:[{label:'血糖 / 估計糖份 (mmol/L)',data,
       borderColor:getCss('--c2'),backgroundColor:getCss('--c2','33'),
@@ -304,6 +320,49 @@ function buildChart(){
 
 /* ---------- CSS 變數 ---------- */
 function getCss(n,a){const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return a?v+a:v;}
+
+/* ======================================================
+   ===============  相機：gUM + fallback  =================
+   ====================================================== */
+async function handleCaptureClick(){
+  // 已在 preview -> 不再打開
+  if(camModal.style.display==='flex'){return;}
+  // 僅 https / localhost 可用
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){
+    capIn.click();return;
+  }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    camPrev.srcObject=stream;await camPrev.play();
+    camModal.style.display='flex';
+  }catch(e){
+    // 被拒絕 → 改用 input capture
+    capIn.click();
+  }
+}
+/* --- 快門：點按畫面 / 按鈕拍照 --- */
+shutter.onclick=takeShot;
+camPrev.onclick =takeShot;
+function takeShot(){
+  const w=camPrev.videoWidth,h=camPrev.videoHeight;
+  if(!w){return;}
+  const cvs=document.createElement('canvas');
+  cvs.width=w;cvs.height=h;
+  cvs.getContext('2d').drawImage(camPrev,0,0,w,h);
+  cvs.toBlob(b=>{
+    const url=URL.createObjectURL(b);
+    photos=[{url,name:`cam_${Date.now()}.jpg`}];   // 單張覆蓋
+    renderPhotos();
+    closeCam();
+  },'image/jpeg',0.92);
+}
+/* --- 關閉相機 --- */
+camClose.onclick=closeCam;
+window.addEventListener('keydown',e=>{if(e.key==='Escape')closeCam();});
+function closeCam(){
+  stream?.getTracks().forEach(t=>t.stop());
+  stream=null;camModal.style.display='none';
+}
 </script>
 </body>
 </html>
