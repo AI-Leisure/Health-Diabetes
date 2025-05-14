@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <!-- =========================================================
-  糖尿病健康管理  v1.0  (2024-06-14)
-  -- 功能
-     1. 自動填入今日日期
-     2. 新增紀錄 / 紀錄 兩分頁
-     3. 列表顯示所有紀錄（可隱藏個資）
-     4. Chart.js 折線圖顯示血糖變化
+  糖尿病健康管理  v1.2  (2024-06-14)
+  變更：
+    • ☑️ 隱藏個人資料（勾選後列表以 * 號遮蔽）
+    • 「拍照」按鈕觸發相機 + 預覽
   ========================================================= -->
 <html lang="zh-Hant">
 
@@ -14,114 +12,40 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>糖尿病健康管理</title>
 
-<!-- ===================  1. 版面樣式  =================== -->
 <style>
-/* ---------- 色彩、字型、圓角 ---------- */
 :root{
-  --c1:#1976d2;          /* 主色 */
-  --c2:#d32f2f;          /* 圖表線 */
-  --r :8px;              /* 圓角 */
+  --c1:#1976d2; --c2:#d32f2f; --r:8px;
   font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif;
 }
-
-/* ---------- 通用 ---------- */
 *{box-sizing:border-box;margin:0}
-body{
-  background:#fafafa;
-  color:#333;
-  display:flex;
-  flex-direction:column;
-  min-height:100vh;
-}
-
-/* ---------- 頁首 ---------- */
-header{
-  background:var(--c1);
-  color:#fff;
-  padding:1rem;
-  text-align:center;
-}
-
-/* ---------- 分頁按鈕 ---------- */
+body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
+header{background:var(--c1);color:#fff;padding:1rem;text-align:center}
 nav{display:flex}
-nav button{
-  flex:1;
-  padding:.7rem;
-  border:0;
-  background:#eee;
-  font-size:1rem;
-}
-nav button.active{
-  color:var(--c1);
-  background:#fff;
-  font-weight:700;
-  border-bottom:3px solid var(--c1);
-}
+nav button{flex:1;padding:.7rem;border:0;background:#eee;font-size:1rem}
+nav button.active{color:var(--c1);background:#fff;font-weight:700;border-bottom:3px solid var(--c1)}
+main{flex:1;width:95%;max-width:840px;margin:1rem auto}
+section{display:none} section.active{display:block}
 
-/* ---------- 主區塊 ---------- */
-main{
-  flex:1;
-  width:95%;
-  max-width:840px;
-  margin:1rem auto;
-}
+form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
+label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
+input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
+input[type="checkbox"]{width:1.2rem;height:1.2rem;margin-right:.45rem}
+.inline{flex-direction:row;align-items:center;gap:.4rem}
+.preview{max-width:120px;margin-top:.4rem;border:1px solid #ddd;border-radius:var(--r)}
 
-/* section 透過 JS .active 決定顯示與否 */
-section{display:none}
-section.active{display:block}
+#listTools{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
+#listBox .card{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 4px #0001;margin-bottom:.9rem}
+.card h4{margin-bottom:.4rem;color:var(--c1)}
+.attach{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.attach a{display:inline-block}
+.attach img{width:64px;height:64px;object-fit:cover;border-radius:var(--r);border:1px solid #ccc}
 
-/* ---------- 表單 ---------- */
-form{
-  background:#fff;
-  padding:1rem;
-  border-radius:var(--r);
-  box-shadow:0 2px 6px #0001;
-  display:flex;
-  flex-direction:column;
-  gap:.75rem;
-}
-label{
-  display:flex;
-  flex-direction:column;
-  font-weight:600;
-  font-size:.9rem;
-}
-input,select,button{
-  padding:.55rem .6rem;
-  font-size:1rem;
-  border:1px solid #ccc;
-  border-radius:var(--r);
-}
-input[type="checkbox"]{
-  width:1.2rem;
-  height:1.2rem;
-  margin-right:.45rem;
-}
-.toggle{
-  display:flex;
-  align-items:center;
-  gap:.25rem;
-}
-
-/* ---------- 列表卡片 ---------- */
-#listBox .card{
-  background:#fff;
-  padding:1rem;
-  border-radius:var(--r);
-  box-shadow:0 2px 4px #0001;
-  margin-bottom:.85rem;
-}
-.card h4{margin-bottom:.5rem;color:var(--c1)}
-
-/* ---------- 圖表 ---------- */
 .chartWrap{margin-top:1.5rem}
 canvas{max-width:100%}
 </style>
 </head>
 
 <body>
-<!-- ===================  2. 版面結構  =================== -->
-
 <header><h1>糖尿病健康管理</h1></header>
 
 <nav>
@@ -130,12 +54,11 @@ canvas{max-width:100%}
 </nav>
 
 <main>
-  <!-- === A. 新增紀錄 === -->
+  <!-- ========= 新增紀錄 ========= -->
   <section id="formSec" class="active">
     <form id="recordForm">
-      <!-- 可隱藏個資 -->
-      <label class="toggle">
-        <input type="checkbox" id="showInfo" checked> 顯示個資
+      <label class="inline">
+        <input type="checkbox" id="hideInfo"> 隱藏個人資料
       </label>
 
       <label>姓名
@@ -160,140 +83,190 @@ canvas{max-width:100%}
         <input id="sugar" type="number" step="0.1" min="1">
       </label>
 
-      <label>食物相片（僅上傳不做分析）
-        <input id="photo" type="file" accept="image/*">
+      <!-- 拍照 -->
+      <label>拍照
+        <button id="photoBtn" type="button" style="margin-top:.4rem;background:#eee">📷 拍照</button>
+        <input id="photo" type="file" accept="image/*" capture="environment" style="display:none">
+        <img id="photoPre" class="preview" style="display:none">
+      </label>
+
+      <label>上載驗身報告 (PDF / 圖檔)
+        <input id="report" type="file" accept=".pdf,image/*">
+        <span id="reportName" style="font-size:.8rem;margin-top:.3rem;color:#555"></span>
       </label>
 
       <button type="submit" style="background:var(--c1);color:#fff">儲存紀錄</button>
     </form>
   </section>
 
-  <!-- === B. 紀錄列表 === -->
+  <!-- ========= 紀錄列表 ========= -->
   <section id="listSec">
+    <div id="listTools">
+      <label style="display:flex;flex-direction:column;font-weight:600;font-size:.9rem">
+        月份
+        <input id="filterMonth" type="month">
+      </label>
+      <button id="toggleChart" style="background:#eee;border:1px solid #ccc;border-radius:var(--r);padding:.5rem .9rem">隱藏圖表</button>
+    </div>
+
     <div id="listBox"></div>
 
-    <!-- 折線圖 -->
-    <div class="chartWrap" style="display:none">
+    <div class="chartWrap">
       <canvas id="sugarChart"></canvas>
     </div>
   </section>
 </main>
 
-<!-- ===================  3. 功能腳本  =================== -->
+<!-- ================ 功能腳本 ================ -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-/* •••••••••  基本 DOM 物件  ••••••••• */
-const form      = document.getElementById('recordForm');
-const listBox   = document.getElementById('listBox');
-const chartWrap = document.querySelector('.chartWrap');
+/* --- DOM 物件 --- */
+const form = document.getElementById('recordForm');
+const hideInfoChk = document.getElementById('hideInfo');
 const dateInput = document.getElementById('date');
-const tabForm   = document.getElementById('tabForm');
-const tabList   = document.getElementById('tabList');
-const formSec   = document.getElementById('formSec');
-const listSec   = document.getElementById('listSec');
+const photoBtn = document.getElementById('photoBtn');
+const photoIn  = document.getElementById('photo');
+const photoPre = document.getElementById('photoPre');
+const reportIn = document.getElementById('report');
+const reportName = document.getElementById('reportName');
 
-let   chart;                 // Chart.js 實例
-let   records = [];          // 全部紀錄（存在記憶體，未做永久存檔）
+const tabForm = document.getElementById('tabForm');
+const tabList = document.getElementById('tabList');
+const formSec = document.getElementById('formSec');
+const listSec = document.getElementById('listSec');
+const listBox = document.getElementById('listBox');
+const filterMonth = document.getElementById('filterMonth');
+const toggleChartBtn = document.getElementById('toggleChart');
+const chartWrap = document.querySelector('.chartWrap');
 
-/* •••••••••  1. 自動填入今日日期  ••••••••• */
-(function autoDate(){
-  const today = new Date().toISOString().split('T')[0];
-  dateInput.value = today;
-})();
+let records = [];
+let chart;
+let chartVisible = true;
 
-/* •••••••••  2. 分頁切換  ••••••••• */
-tabForm.addEventListener('click', () => toggleTab(true));
-tabList.addEventListener('click', () => toggleTab(false));
+/* --- 1. 今日日期 --- */
+(function(){ dateInput.value = new Date().toISOString().split('T')[0]; })();
 
-function toggleTab(showForm){
-  tabForm.classList.toggle('active', showForm);
-  tabList.classList.toggle('active', !showForm);
-  formSec.classList.toggle('active', showForm);
-  listSec.classList.toggle('active', !showForm);
-  if(!showForm) buildList();
+/* --- 2. 分頁 --- */
+tabForm.addEventListener('click',()=>toggleTab(true));
+tabList.addEventListener('click',()=>toggleTab(false));
+function toggleTab(formOn){
+  tabForm.classList.toggle('active',formOn);
+  tabList.classList.toggle('active',!formOn);
+  formSec.classList.toggle('active',formOn);
+  listSec.classList.toggle('active',!formOn);
+  if(!formOn) buildList();
 }
 
-/* •••••••••  3. 儲存紀錄  ••••••••• */
-form.addEventListener('submit', e=>{
-  e.preventDefault();
+/* --- 3. 拍照 --- */
+photoBtn.addEventListener('click', () => photoIn.click());
+photoIn.addEventListener('change', e=>{
+  const f = e.target.files[0];
+  if(f){
+    photoPre.src = URL.createObjectURL(f);
+    photoPre.style.display='block';
+  }else{
+    photoPre.style.display='none';
+  }
+});
 
+/* --- 4. 報告檔名 --- */
+reportIn.addEventListener('change',e=>{
+  const f = e.target.files[0];
+  reportName.textContent = f ? f.name : '';
+});
+
+/* --- 5. 儲存紀錄 --- */
+form.addEventListener('submit',e=>{
+  e.preventDefault();
   const rec = {
-    name : document.getElementById('name').value.trim(),
-    age  : +document.getElementById('age').value,
-    date : dateInput.value,
-    meal : document.getElementById('meal').value,
-    sugar: document.getElementById('sugar').value
-           ? +document.getElementById('sugar').value
-           : null
+    name  : document.getElementById('name').value.trim(),
+    age   : +document.getElementById('age').value,
+    date  : dateInput.value,
+    meal  : document.getElementById('meal').value,
+    sugar : document.getElementById('sugar').value ? +document.getElementById('sugar').value : null,
+    hide  : hideInfoChk.checked,
+    photo : photoIn.files[0]  ? URL.createObjectURL(photoIn.files[0])  : null,
+    report: reportIn.files[0] ? URL.createObjectURL(reportIn.files[0]) : null,
+    reportName: reportIn.files[0] ? reportIn.files[0].name : ''
   };
   records.push(rec);
 
-  form.reset();
-  autoDate();                         // 重設後再填回今天日期
+  form.reset(); photoPre.style.display='none'; reportName.textContent='';
+  dateInput.value = new Date().toISOString().split('T')[0];
   alert('已儲存！');
 });
 
-/* •••••••••  4. 產生列表 + 圖表  ••••••••• */
-function buildList(){
-  const showInfo = document.getElementById('showInfo').checked;
-  listBox.innerHTML = '';
+/* --- 6. 列表 / 圖表 --- */
+filterMonth.addEventListener('change',buildList);
+toggleChartBtn.addEventListener('click',()=>{
+  chartVisible = !chartVisible;
+  toggleChartBtn.textContent = chartVisible ? '隱藏圖表' : '分析圖表';
+  chartWrap.style.display = chartVisible ? 'block':'none';
+});
 
-  records.forEach(r=>{
+function buildList(){
+  listBox.innerHTML='';
+  const ym = filterMonth.value;               // yyyy-MM
+  const rows = records.filter(r=>!ym || r.date.startsWith(ym));
+
+  rows.forEach(r=>{
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className='card';
+
+    const nameText = r.hide ? '***' : r.name;
+    const ageText  = r.hide ? '**'  : r.age;
+
     card.innerHTML = `
       <h4>${r.date}（${r.meal}）</h4>
-      ${showInfo ? `<p>姓名：${r.name}　年齡：${r.age}</p>` : ''}
-      ${r.sugar ? `<p>血糖：<strong>${r.sugar}</strong> mmol/L</p>`
-                : '<p>未量血糖</p>'}
+      <p>姓名：${nameText}　年齡：${ageText}</p>
+      ${r.sugar ? `<p>血糖：<strong>${r.sugar}</strong> mmol/L</p>` : '<p>未量血糖</p>'}
     `;
+
+    const attach = document.createElement('div'); attach.className='attach';
+    if(r.photo){
+      const a=document.createElement('a');
+      a.href=r.photo; a.target='_blank';
+      a.innerHTML=`<img src="${r.photo}" alt="photo">`;
+      attach.appendChild(a);
+    }
+    if(r.report){
+      const a=document.createElement('a');
+      a.href=r.report; a.target='_blank';
+      a.textContent=r.reportName||'報告';
+      a.style.border='1px solid #ccc';a.style.padding='4px 6px';a.style.borderRadius='6px';a.style.fontSize='.8rem';
+      attach.appendChild(a);
+    }
+    if(attach.childElementCount) card.appendChild(attach);
     listBox.appendChild(card);
   });
 
-  buildChart();
+  buildChart(rows);
 }
 
-/* ---------- 折線圖 ---------- */
-function buildChart(){
-  const data   = records.filter(r=>r.sugar).map(r=>r.sugar);
-  const labels = records.filter(r=>r.sugar).map(r=>r.date+' '+r.meal);
-
-  if(!data.length){             // 沒有血糖資料就隱藏圖表
-    chartWrap.style.display='none';
-    return;
-  }
+function buildChart(rows){
+  if(!chartVisible){ chartWrap.style.display='none'; return; }
+  const data   = rows.filter(r=>r.sugar).map(r=>r.sugar);
+  const labels = rows.filter(r=>r.sugar).map(r=>r.date+' '+r.meal);
+  if(!data.length){ chartWrap.style.display='none'; return; }
   chartWrap.style.display='block';
 
-  if(chart) chart.destroy();    // 先銷毀舊圖表
+  if(chart) chart.destroy();
   chart = new Chart(document.getElementById('sugarChart'),{
     type:'line',
-    data:{
-      labels,
-      datasets:[{
-        label:'血糖 (mmol/L)',
-        data,
-        borderColor:varColor('--c2'),
-        backgroundColor:varColor('--c2','33'), /* 20% 透明度 */
-        tension:.25,
-        pointRadius:4,
-        pointBackgroundColor:varColor('--c2')
-      }]
-    },
-    options:{
-      scales:{
-        y:{beginAtZero:false}
-      }
-    }
+    data:{labels,
+      datasets:[{label:'血糖 (mmol/L)',data,
+        borderColor:getCss('--c2'),
+        backgroundColor:getCss('--c2','33'),
+        tension:.25,pointRadius:4,pointBackgroundColor:getCss('--c2')}]},
+    options:{scales:{y:{beginAtZero:false}}}
   });
 }
 
-/* ---------- 小工具：取得 CSS 變數 ---------- */
-function varColor(name,alpha){
-  const v = getComputedStyle(document.documentElement)
-            .getPropertyValue(name).trim();
+/* --- 工具：讀 CSS 變數 --- */
+function getCss(name,alpha){
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return alpha ? v+alpha : v;
 }
 </script>
-
 </body>
 </html>
