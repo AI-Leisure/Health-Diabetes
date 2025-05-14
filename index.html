@@ -1,169 +1,299 @@
 <!DOCTYPE html>
+<!-- =========================================================
+  糖尿病健康管理  v1.0  (2024-06-14)
+  -- 功能
+     1. 自動填入今日日期
+     2. 新增紀錄 / 紀錄 兩分頁
+     3. 列表顯示所有紀錄（可隱藏個資）
+     4. Chart.js 折線圖顯示血糖變化
+  ========================================================= -->
 <html lang="zh-Hant">
+
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>糖尿病健康管理</title>
+
+<!-- ===================  1. 版面樣式  =================== -->
 <style>
-/* ======  整站樣式  ====== */
-:root{--c1:#1976d2;--r:8px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif}
-*{box-sizing:border-box}
-body{margin:0;background:#fafafa;color:#222;display:flex;flex-direction:column;min-height:100vh}
-header{background:var(--c1);color:#fff;text-align:center;padding:.8rem}
-nav{display:flex;gap:.5rem;justify-content:center;background:#fff;border-bottom:1px solid #ddd}
-nav button{flex:1;padding:.6rem;background:none;border:none;font-weight:600;font-size:.9rem;cursor:pointer}
-nav button.active{color:var(--c1);border-bottom:3px solid var(--c1)}
-main{flex:1;width:95%;max-width:840px;margin:1rem auto}
+/* ---------- 色彩、字型、圓角 ---------- */
+:root{
+  --c1:#1976d2;          /* 主色 */
+  --c2:#d32f2f;          /* 圖表線 */
+  --r :8px;              /* 圓角 */
+  font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif;
+}
+
+/* ---------- 通用 ---------- */
+*{box-sizing:border-box;margin:0}
+body{
+  background:#fafafa;
+  color:#333;
+  display:flex;
+  flex-direction:column;
+  min-height:100vh;
+}
+
+/* ---------- 頁首 ---------- */
+header{
+  background:var(--c1);
+  color:#fff;
+  padding:1rem;
+  text-align:center;
+}
+
+/* ---------- 分頁按鈕 ---------- */
+nav{display:flex}
+nav button{
+  flex:1;
+  padding:.7rem;
+  border:0;
+  background:#eee;
+  font-size:1rem;
+}
+nav button.active{
+  color:var(--c1);
+  background:#fff;
+  font-weight:700;
+  border-bottom:3px solid var(--c1);
+}
+
+/* ---------- 主區塊 ---------- */
+main{
+  flex:1;
+  width:95%;
+  max-width:840px;
+  margin:1rem auto;
+}
+
+/* section 透過 JS .active 決定顯示與否 */
 section{display:none}
 section.active{display:block}
-form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 1px 4px #0002;display:flex;flex-direction:column;gap:.8rem}
-input,select,button{padding:.5rem;font-size:1rem;border-radius:var(--r)}
-input,select{border:1px solid #ccc;width:100%}
-button{background:var(--c1);color:#fff;border:none;cursor:pointer}
-.toggle{display:flex;align-items:center;gap:.4rem;font-size:.9rem}
-#listBox .card{background:#fff;padding:.6rem;border-radius:var(--r);box-shadow:0 1px 3px #0002;margin:.5rem 0;font-size:.85rem}
-#calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
-.day{background:#fff;min-height:80px;position:relative;padding:2px 2px 18px;border-radius:var(--r);font-size:.78rem;box-shadow:0 1px 2px #0001;cursor:pointer;text-align:center;line-height:1.15}
-.day>span{position:absolute;top:2px;right:4px;font-size:.7rem;color:#666}
-.modal{position:fixed;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;z-index:99}
-.modal>div{background:#fff;padding:1rem;border-radius:var(--r);max-width:88%;max-height:90%;overflow:auto}
-.warn{color:#d32f2f;text-align:center;font-size:.85rem;margin:.5rem 0}
-.hidden{display:none}
-.camWrap video{width:100%;border-radius:var(--r)}
-.summary{margin-top:4px;text-align:right;font-size:.85rem}
-@media(max-width:540px){nav button{font-size:.8rem}}
+
+/* ---------- 表單 ---------- */
+form{
+  background:#fff;
+  padding:1rem;
+  border-radius:var(--r);
+  box-shadow:0 2px 6px #0001;
+  display:flex;
+  flex-direction:column;
+  gap:.75rem;
+}
+label{
+  display:flex;
+  flex-direction:column;
+  font-weight:600;
+  font-size:.9rem;
+}
+input,select,button{
+  padding:.55rem .6rem;
+  font-size:1rem;
+  border:1px solid #ccc;
+  border-radius:var(--r);
+}
+input[type="checkbox"]{
+  width:1.2rem;
+  height:1.2rem;
+  margin-right:.45rem;
+}
+.toggle{
+  display:flex;
+  align-items:center;
+  gap:.25rem;
+}
+
+/* ---------- 列表卡片 ---------- */
+#listBox .card{
+  background:#fff;
+  padding:1rem;
+  border-radius:var(--r);
+  box-shadow:0 2px 4px #0001;
+  margin-bottom:.85rem;
+}
+.card h4{margin-bottom:.5rem;color:var(--c1)}
+
+/* ---------- 圖表 ---------- */
+.chartWrap{margin-top:1.5rem}
+canvas{max-width:100%}
 </style>
 </head>
+
 <body>
-<header><h2>糖尿病健康管理</h2></header>
+<!-- ===================  2. 版面結構  =================== -->
+
+<header><h1>糖尿病健康管理</h1></header>
 
 <nav>
- <button data-tab="rec"  class="active">新增紀錄</button>
- <button data-tab="list">列表</button>
- <button data-tab="cal">月曆</button>
- <button data-tab="sum">統計</button>
- <button data-tab="graph">圖表</button>
- <button data-tab="rep">驗身報告</button>
+  <button id="tabForm" class="active">新增紀錄</button>
+  <button id="tabList">紀&nbsp;錄</button>
 </nav>
 
 <main>
-<!-- ========= 新增紀錄 ========= -->
-<section id="rec" class="active">
-<form id="recForm">
- <div class="toggle"><label>顯示個資 <input type="checkbox" id="showPI" checked></label></div>
- <div id="piArea">
-  <label>姓名 <input id="name"></label>
-  <label>年齡 <input id="age" type="number" min="0"></label>
- </div>
+  <!-- === A. 新增紀錄 === -->
+  <section id="formSec" class="active">
+    <form id="recordForm">
+      <!-- 可隱藏個資 -->
+      <label class="toggle">
+        <input type="checkbox" id="showInfo" checked> 顯示個資
+      </label>
 
- <label>日期 <input id="date" type="date"></label>
- <label>餐次
-  <select id="period"><option>早餐</option><option>午餐</option><option>晚餐</option></select>
- </label>
+      <label>姓名
+        <input id="name" required>
+      </label>
 
- <label>血糖 (mmol/L，可留空) <input id="bg" type="number" step="0.1" min="0"></label>
+      <label>年齡
+        <input id="age" type="number" min="1" max="120" required>
+      </label>
 
- <fieldset style="border:1px solid #ccc;border-radius:var(--r);padding:.8rem">
-  <legend>食物相片 (只存相片與估算糖分)</legend>
-  <div style="display:flex;gap:.6rem;margin-bottom:.5rem">
-   <input id="photo" type="file" accept="image/*">
-   <button type="button" id="camBtn">📷 即時拍照</button>
-  </div>
-  <div id="photoPrev" class="hidden">
-    <img id="prevImg" style="width:100%;max-height:150px;object-fit:cover;border-radius:var(--r)">
-    <p>估算糖分：<span id="foodSugar"></span> mmol/L</p>
-  </div>
- </fieldset>
+      <label>日期
+        <input id="date" type="date" required>
+      </label>
 
- <button>儲存紀錄</button>
-</form>
-</section>
+      <label>餐次
+        <select id="meal">
+          <option>早餐</option><option>午餐</option><option>晚餐</option>
+        </select>
+      </label>
 
-<!-- ========= 列表 ========= -->
-<section id="list"><div id="listBox"></div></section>
+      <label>血糖 (mmol/L，可留空)
+        <input id="sugar" type="number" step="0.1" min="1">
+      </label>
 
-<!-- ========= 月曆 ========= -->
-<section id="cal">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin:.4rem 0">
-    <button id="prevM">&lt;</button><h3 id="calTitle" style="margin:0"></h3><button id="nextM">&gt;</button>
-  </div>
-  <div id="calendar"></div>
-  <div id="monthSugar" class="summary"></div>
-</section>
+      <label>食物相片（僅上傳不做分析）
+        <input id="photo" type="file" accept="image/*">
+      </label>
 
-<!-- ========= 統計 ========= -->
-<section id="sum">
- <h3>本月血糖統計</h3>
- <table style="width:100%;border-collapse:collapse;font-size:.9rem">
-  <thead><tr><th>餐次</th><th>平均 mmol/L</th></tr></thead>
-  <tbody id="sumBody"></tbody>
- </table>
- <canvas id="sumChart" style="max-width:100%;margin-top:.8rem"></canvas>
-</section>
+      <button type="submit" style="background:var(--c1);color:#fff">儲存紀錄</button>
+    </form>
+  </section>
 
-<!-- ========= 圖表 ========= -->
-<section id="graph">
- <button id="drawGraph" style="width:100%;margin-bottom:.8rem">🔄 產生折線圖 (全部日期)</button>
- <canvas id="graphCanvas" style="max-width:100%"></canvas>
-</section>
+  <!-- === B. 紀錄列表 === -->
+  <section id="listSec">
+    <div id="listBox"></div>
 
-<!-- ========= 驗身報告 ========= -->
-<section id="rep">
- <h4>上傳驗身報告檔 (jpg/png/pdf)</h4>
- <input id="repFile" type="file" accept="image/*,.pdf" multiple>
- <button id="analyzeBtn" style="width:100%;margin:.8rem 0">OCR 解析並加入資料</button>
- <canvas id="chart" style="max-width:100%;margin-top:1rem"></canvas>
- <p id="repMsg" class="warn hidden"></p>
-</section>
+    <!-- 折線圖 -->
+    <div class="chartWrap" style="display:none">
+      <canvas id="sugarChart"></canvas>
+    </div>
+  </section>
 </main>
 
-<div id="modal" class="modal hidden"><div id="modalContent"></div></div>
-
-<!-- =====  第三方圖表函式 ===== -->
+<!-- ===================  3. 功能腳本  =================== -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script type="module">
-/* ---------- 工具 ---------- */
-const $=q=>document.querySelector(q), $$=q=>document.querySelectorAll(q), pad=n=>n.toString().padStart(2,'0');
-/* ---------- 儲存 ---------- */
-function lsOK(){try{localStorage.setItem('t','1');localStorage.removeItem('t');return true;}catch{return false}}
-const persist=lsOK(),mem={},store={get:k=>persist?JSON.parse(localStorage.getItem(k)||'null'):mem[k]??null,
-                                    set:(k,v)=>{persist?localStorage.setItem(k,JSON.stringify(v)):mem[k]=v;}};
-/* ---------- 狀態 ---------- */
-let recArr=store.get('records')||[],repArr=store.get('reports')||[];
-let curMonth=new Date();let photoData=null,foodSugar=null;
-/* ---------- 預設日期 ---------- */
-$('#date').value=new Date().toISOString().slice(0,10);
-/* ---------- 個資開關 ---------- */
-$('#showPI').onchange=e=>$('#piArea').style.display=e.target.checked?'block':'none';
-/* ---------- 拍照 ---------- */
-$('#camBtn').onclick=async()=>{ … /* 省略註解，程式如前 */ };
-/* ---------- 圖片上傳 ---------- */
-$('#photo').onchange=e=>{ … };
-function calcSugar(url){ … }
-/* ---------- 儲存紀錄 ---------- */
-$('#recForm').onsubmit=e=>{ … };
-/* ---------- 列表 ---------- */
-function renderList(){ … }
-/* ---------- 月曆 & 詳細 ---------- */
-$('#prevM').onclick=()=>{curMonth.setMonth(curMonth.getMonth()-1);renderCal();}
-$('#nextM').onclick=()=>{curMonth.setMonth(curMonth.getMonth()+1);renderCal();}
-function renderCal(){ … }
-function showDetail(d){ … }
-$('#modal').onclick=e=>e.target.id==='modal'&&$('#modal').classList.add('hidden');
-/* ---------- 本月統計 ---------- */
-let sumChart=null;function renderSummary(){ … }
-/* ---------- 全期間圖表 ---------- */
-let graphChart=null;$('#drawGraph').onclick=()=>{ … };
-/* ---------- 驗身報告 OCR + Chart ---------- */
-async function loadTess(){if(window.Tesseract)return;await import('https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js');}
-function readFile(f){ … }
-function parseReport(t){ … }
-$('#analyzeBtn').onclick=async()=>{ … };
-let repChart=null;function drawReportChart(){ … }
-/* ---------- 分頁切換 ---------- */
-$$('nav button').forEach(btn=>btn.onclick=()=>{ … });
-/* ---------- 初始載入 ---------- */
-renderCal();
+<script>
+/* •••••••••  基本 DOM 物件  ••••••••• */
+const form      = document.getElementById('recordForm');
+const listBox   = document.getElementById('listBox');
+const chartWrap = document.querySelector('.chartWrap');
+const dateInput = document.getElementById('date');
+const tabForm   = document.getElementById('tabForm');
+const tabList   = document.getElementById('tabList');
+const formSec   = document.getElementById('formSec');
+const listSec   = document.getElementById('listSec');
+
+let   chart;                 // Chart.js 實例
+let   records = [];          // 全部紀錄（存在記憶體，未做永久存檔）
+
+/* •••••••••  1. 自動填入今日日期  ••••••••• */
+(function autoDate(){
+  const today = new Date().toISOString().split('T')[0];
+  dateInput.value = today;
+})();
+
+/* •••••••••  2. 分頁切換  ••••••••• */
+tabForm.addEventListener('click', () => toggleTab(true));
+tabList.addEventListener('click', () => toggleTab(false));
+
+function toggleTab(showForm){
+  tabForm.classList.toggle('active', showForm);
+  tabList.classList.toggle('active', !showForm);
+  formSec.classList.toggle('active', showForm);
+  listSec.classList.toggle('active', !showForm);
+  if(!showForm) buildList();
+}
+
+/* •••••••••  3. 儲存紀錄  ••••••••• */
+form.addEventListener('submit', e=>{
+  e.preventDefault();
+
+  const rec = {
+    name : document.getElementById('name').value.trim(),
+    age  : +document.getElementById('age').value,
+    date : dateInput.value,
+    meal : document.getElementById('meal').value,
+    sugar: document.getElementById('sugar').value
+           ? +document.getElementById('sugar').value
+           : null
+  };
+  records.push(rec);
+
+  form.reset();
+  autoDate();                         // 重設後再填回今天日期
+  alert('已儲存！');
+});
+
+/* •••••••••  4. 產生列表 + 圖表  ••••••••• */
+function buildList(){
+  const showInfo = document.getElementById('showInfo').checked;
+  listBox.innerHTML = '';
+
+  records.forEach(r=>{
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <h4>${r.date}（${r.meal}）</h4>
+      ${showInfo ? `<p>姓名：${r.name}　年齡：${r.age}</p>` : ''}
+      ${r.sugar ? `<p>血糖：<strong>${r.sugar}</strong> mmol/L</p>`
+                : '<p>未量血糖</p>'}
+    `;
+    listBox.appendChild(card);
+  });
+
+  buildChart();
+}
+
+/* ---------- 折線圖 ---------- */
+function buildChart(){
+  const data   = records.filter(r=>r.sugar).map(r=>r.sugar);
+  const labels = records.filter(r=>r.sugar).map(r=>r.date+' '+r.meal);
+
+  if(!data.length){             // 沒有血糖資料就隱藏圖表
+    chartWrap.style.display='none';
+    return;
+  }
+  chartWrap.style.display='block';
+
+  if(chart) chart.destroy();    // 先銷毀舊圖表
+  chart = new Chart(document.getElementById('sugarChart'),{
+    type:'line',
+    data:{
+      labels,
+      datasets:[{
+        label:'血糖 (mmol/L)',
+        data,
+        borderColor:varColor('--c2'),
+        backgroundColor:varColor('--c2','33'), /* 20% 透明度 */
+        tension:.25,
+        pointRadius:4,
+        pointBackgroundColor:varColor('--c2')
+      }]
+    },
+    options:{
+      scales:{
+        y:{beginAtZero:false}
+      }
+    }
+  });
+}
+
+/* ---------- 小工具：取得 CSS 變數 ---------- */
+function varColor(name,alpha){
+  const v = getComputedStyle(document.documentElement)
+            .getPropertyValue(name).trim();
+  return alpha ? v+alpha : v;
+}
 </script>
+
 </body>
 </html>
