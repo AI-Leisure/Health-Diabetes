@@ -287,18 +287,39 @@ function buildCal(){
 
 function renderChart(){
   if(!chartShown){$('chartWrap').style.display='none';return;}
-  const ym=$('monthPick').value;
-  const data=records.filter(r=>r.sugarMmol!=null && (!ym||r.date.startsWith(ym)));
-  if(!data.length){alert('沒有血糖數據');chartShown=false;$('chartBtn').textContent='分析圖表';return;}
+
+  const ym  = $('monthPick').value;
+  const rows= records.filter(r => r.sugarMmol!=null &&
+                                  (!ym || r.date.startsWith(ym)));
+
+  if(!rows.length){
+    alert('沒有血糖數據');
+    chartShown = false;
+    $('chartBtn').textContent = '分析圖表';
+    return;
+  }
+
   $('chartWrap').style.display='block';
-  chart?.destroy();
-  chart=new Chart($('sugarChart'),{
+  chart?.destroy();      // 若已有圖先銷毀
+
+  chart = new Chart($('sugarChart'),{
     type:'line',
-    data:{labels:data.map(r=>r.date+' '+r.meal),
-      datasets:[{label:'血糖 mmol/L',data:data.map(r=>r.sugarMmol),borderColor:var(--red),backgroundColor:'#d32f2f33',tension:.25}]},
+    data:{
+      labels: rows.map(r=>r.date+' '+r.meal),
+      datasets:[{
+        label:'血糖 (mmol/L)',
+        data: rows.map(r=>r.sugarMmol),
+        borderColor:'#d32f2f',
+        backgroundColor:'#d32f2f33',
+        tension:.25,
+        pointRadius:4,
+        pointBackgroundColor:'#d32f2f'
+      }]
+    },
     options:{maintainAspectRatio:false}
   });
 }
+
 </script>
 </body>
 </html>
