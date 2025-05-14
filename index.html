@@ -1,50 +1,91 @@
-<!--  ▼▼▼  內文太長，請往下拉直到 </html> 結束 ▼▼▼ -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
-      <!-- DEBUG overlay：任何 console.log / console.error 直接顯示在頁面 -->
-<style>
-#dbg{position:fixed;inset:0 auto auto 0;max-height:45vh;width:100%;
-     overflow:auto;background:#000d;font:12px/1.4 monospace;color:#0f0;
-     z-index:9999;padding:6px 4px;white-space:pre-wrap}
-</style>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>糖尿病健康管理</title>
 <style>
-:root{--blue:#0d6efd;--red:#d32f2f;--r:6px;
-      font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
+:root{
+  --blue:#0d6efd;
+  --red:#d32f2f;
+  --r:6px;
+  font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif
+}
 *{box-sizing:border-box;margin:0}
 body{background:#fff;color:#222;min-height:100vh;display:flex;flex-direction:column}
-header{background:var(--blue);color:#fff;text-align:center;padding:1.1rem;font-size:1.8rem;font-weight:700}
+header{
+  background:var(--blue);color:#fff;text-align:center;
+  padding:1.1rem;font-size:1.8rem;font-weight:700
+}
 nav{display:flex;border-bottom:3px solid var(--blue)}
-nav button{flex:1;border:0;background:#f0f0f0;padding:.9rem;font-size:1.05rem;font-weight:600;color:#555}
-nav button.active{background:#fff;color:var(--blue);border-bottom:3px solid var(--blue)}
+nav button{
+  flex:1;border:0;background:#f0f0f0;padding:.9rem;
+  font-size:1.05rem;font-weight:600;color:#555
+}
+nav button.active{
+  background:#fff;color:var(--blue);
+  border-bottom:3px solid var(--blue)
+}
 main{flex:1;width:94%;max-width:760px;margin:1.2rem auto}
+
 section{display:none}section.active{display:block}
+
 form{display:flex;flex-direction:column;gap:.9rem}
 label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
-input,select,button{font-size:1rem;padding:.6rem .65rem;border:1px solid #bbb;border-radius:var(--r)}
+input,select,button{
+  font-size:1rem;padding:.6rem .65rem;
+  border:1px solid #bbb;border-radius:var(--r)
+}
 input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 .inline{flex-direction:row;align-items:center;gap:.4rem}
-.personal{display:none}               /* 預設隱藏姓名／年齡 */
-#photosWrap{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.3rem}
-.photo{width:80px;height:80px;border:1px solid #bbb;border-radius:var(--r);position:relative;overflow:hidden}
+
+.personal{display:none}   /* 預設隱藏姓名 / 年齡 */
+
+#photosWrap{
+  display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.3rem
+}
+.photo{
+  width:80px;height:80px;border:1px solid #bbb;border-radius:var(--r);
+  position:relative;overflow:hidden
+}
 .photo img{width:100%;height:100%;object-fit:cover}
-.photo em{position:absolute;left:0;right:0;bottom:0;background:#fff;font-size:.85rem;font-weight:600;text-align:center}
-.photo span{position:absolute;top:-5px;right:-5px;width:18px;height:18px;border-radius:50%;background:#fff;border:1px solid #888;font-size:.7rem;line-height:16px;text-align:center;cursor:pointer}
+.photo em{
+  position:absolute;left:0;right:0;bottom:0;background:#fff;
+  font-size:.85rem;font-weight:600;text-align:center
+}
+.photo span{
+  position:absolute;top:-5px;right:-5px;width:18px;height:18px;
+  border-radius:50%;background:#fff;border:1px solid #888;
+  font-size:.7rem;line-height:16px;text-align:center;cursor:pointer
+}
+
 #tools{display:flex;align-items:center;gap:.7rem;margin:1rem 0}
 #subTabs{display:flex;margin-bottom:.8rem}
-#subTabs button{flex:1;border:1px solid var(--blue);background:#fff;color:var(--blue);padding:.55rem;border-radius:var(--r)}
+#subTabs button{
+  flex:1;border:1px solid var(--blue);background:#fff;color:var(--blue);
+  padding:.55rem;border-radius:var(--r)
+}
 #subTabs button.active{background:var(--blue);color:#fff}
-.list-card{border:1px solid #ddd;border-radius:var(--r);padding:1rem;margin-bottom:1rem}
+
+.list-card{
+  border:1px solid #ddd;border-radius:var(--r);
+  padding:1rem;margin-bottom:1rem
+}
 .list-card h4{color:var(--blue);margin-bottom:.35rem}
 .attach{display:flex;gap:.4rem;margin-top:.4rem}
-.attach img{width:64px;height:64px;object-fit:cover;border:1px solid #bbb;border-radius:var(--r)}
+.attach img{
+  width:64px;height:64px;object-fit:cover;
+  border:1px solid #bbb;border-radius:var(--r)
+}
 .attach figcaption{font-size:.85rem;text-align:center}
+
 .calendar{width:100%;border-collapse:collapse}
-.calendar th,.calendar td{border:1px solid #ccc;width:14.28%;height:86px;vertical-align:top;font-size:.75rem;padding:2px}
+.calendar th,.calendar td{
+  border:1px solid #ccc;width:14.28%;height:86px;vertical-align:top;
+  font-size:.75rem;padding:2px
+}
 .calendar th{background:#f5f5f5}
+
 .chartWrap{margin-top:1.2rem}
 canvas{max-width:100%;height:240px!important}
 </style>
@@ -58,46 +99,68 @@ canvas{max-width:100%;height:240px!important}
 </nav>
 
 <main>
+<!-- 新增 -->
 <section id="addSec" class="active">
   <form id="form">
     <label class="inline"><input type="checkbox" id="showInfo"> 顯示個人資料</label>
+
     <div class="personal">
       <label>姓名 <input id="name"></label>
       <label>年齡 <input id="age" type="number" min="1" max="120"></label>
     </div>
+
     <label>日期 <input id="date" type="date" required></label>
+
     <label>餐次
       <select id="meal"><option>早餐</option><option>午餐</option><option>晚餐</option></select>
     </label>
-    <label>血糖 (mmol/L，可留空) <input id="sugarMmol" type="number" step="0.1" min="1" max="40"></label>
+
+    <label>血糖 (mmol/L，可留空)
+      <input id="sugarMmol" type="number" step="0.1" min="1" max="40">
+    </label>
+
     <label class="inline">拍照
       <button id="camBtn" type="button">📷 拍照</button>
       <input id="camIn" type="file" accept="image/*" capture="environment" hidden>
     </label>
+
     <label class="inline">上載食物照片
       <button id="fileBtn" type="button">📑 選擇檔案</button>
       <input id="fileIn" type="file" accept="image/*" multiple hidden>
     </label>
-    <small style="color:#666">AI 估值中顯示 ⏳，失敗顯示 ⚠️</small>
+
+    <div style="color:#666;display:flex;align-items:center;font-size:0.85rem">
+      <span>AI 估值中顯示 ⏳，失敗顯示 ⚠️</span>
+    </div>
+
     <div id="photosWrap"></div>
-    <button style="background:var(--blue);color:#fff">儲存紀錄</button>
+
+    <button type="submit" style="background:var(--blue);color:#fff;margin-top:1rem">儲存紀錄</button>
   </form>
 </section>
 
+<!-- 列表 -->
 <section id="listSec">
   <div id="tools">
-    <label style="display:flex;flex-direction:column;font-weight:600;font-size:.9rem">
-      月份 <input type="month" id="monthPick">
+    <label style="flex:1">
+      月份 <input type="month" id="monthPick" style="width:100%">
     </label>
-    <button id="chartBtn" style="border:1px solid #bbb;background:#fff;border-radius:var(--r);padding:.45rem .9rem">分析圖表</button>
+    <button id="chartBtn"
+            style="border:1px solid #bbb;background:#fff;border-radius:var(--r);
+                   padding:.45rem .9rem">分析圖表</button>
   </div>
+
   <div id="subTabs">
     <button id="tabL" class="active">列表</button>
     <button id="tabC">月曆</button>
   </div>
+
   <div id="listBox"></div>
   <div id="calBox" style="display:none"></div>
-  <div class="chartWrap" style="display:none"><canvas id="sugarChart"></canvas></div>
+
+  <div class="chartWrap" style="display:none">
+    <canvas id="sugarChart"></canvas>
+  </div>
 </section>
 </main>
 
@@ -106,20 +169,39 @@ canvas{max-width:100%;height:240px!important}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
 <script>
-/* === 把 YOUR_WORKER_URL 改成自己的 ================================= */
+/* =========================================================
+   使用提供的 Cloudflare Worker 代理
+   ========================================================= */
 const WORKER = 'https://off-proxy.leisure9654.workers.dev';
-/* =================================================================== */
+/* --------------------------------------------------------- */
 
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
+
 let model,photos=[],records=[],chart,chartShown=false;
 
-/* --------- 初始化 -------------------------------------------------- */
+/* ---------- 初始化 -------------------------------------- */
 window.addEventListener('DOMContentLoaded',async()=>{
   $('date').value=today();
   $('name').value=localStorage.dm_name||'';
   $('age').value=localStorage.dm_age||'';
-  model=await mobilenet.load();
+  
+  // 從localStorage加載記錄
+  try {
+    const saved = localStorage.getItem('dm_records');
+    if (saved) records = JSON.parse(saved);
+  } catch (e) {
+    console.error('加載記錄時出錯', e);
+  }
+  
+  try {
+    model=await mobilenet.load();
+    console.log('AI模型加載完成');
+  } catch (e) {
+    console.error('AI模型加載失敗', e);
+    alert('AI模型加載失敗，某些功能可能無法使用');
+  }
+  
   toggleInfo();
   render();
 });
@@ -131,7 +213,7 @@ function toggleInfo(){
   $('name').required=$('age').required=s;
 }
 
-/* --------- 主分頁 -------------------------------------------------- */
+/* ---------- 主分頁切換 ---------------------------------- */
 $('tabAdd').onclick=()=>switchTab(true);
 $('tabList').onclick=()=>switchTab(false);
 function switchTab(add){
@@ -139,9 +221,12 @@ function switchTab(add){
   $('tabList').classList.toggle('active',!add);
   $('addSec').classList.toggle('active',add);
   $('listSec').classList.toggle('active',!add);
+  
+  // 切換到記錄頁時更新
+  if (!add) render();
 }
 
-/* --------- 子分頁 -------------------------------------------------- */
+/* ---------- 子分頁切換 ---------------------------------- */
 $('tabL').onclick=()=>sub(true);
 $('tabC').onclick=()=>sub(false);
 function sub(l){
@@ -151,187 +236,329 @@ function sub(l){
   $('calBox').style.display=l?'none':'block';
 }
 
-/* --------- 上載 / 拍照 ------------------------------------------- */
+/* ---------- 上載 / 拍照 -------------------------------- */
 $('camBtn').onclick=()=>$('camIn').click();
 $('fileBtn').onclick=()=>$('fileIn').click();
-$('camIn').onchange=e=>addFiles(e.target.files);
-$('fileIn').onchange=e=>addFiles(e.target.files);
+$('camIn').onchange=e=>{
+  addFiles(e.target.files);
+  e.target.value = ''; // 清空，允許重複選擇相同檔案
+};
+$('fileIn').onchange=e=>{
+  addFiles(e.target.files);
+  e.target.value = ''; // 清空，允許重複選擇相同檔案
+};
 
 async function addFiles(fs){
+  if (!fs || !fs.length) return;
+  
   for(const f of fs){
-    if(!f.type.startsWith('image/'))continue;
-    const url=URL.createObjectURL(f);
-    const p={url,state:'loading',sugar:null};
-    photos.push(p);
-    renderPhotos();
-    predict(p);
+    if(!f.type.startsWith('image/')) continue;
+    
+    try {
+      const url=URL.createObjectURL(f);
+      const p={url, state:'loading', sugar:null, file:f.name};
+      photos.push(p);
+      renderPhotos();
+      
+      if (model) {
+        predict(p);
+      } else {
+        p.state = 'fail';
+        renderPhotos();
+      }
+    } catch (e) {
+      console.error('處理圖片時出錯', e);
+    }
   }
 }
 
-/* --------- AI ----------------------------------------------------- */
+/* ---------- AI + 糖份 ---------------------------------- */
 async function predict(p){
   try{
-    const img=new Image();img.src=p.url;await img.decode();
+    const img=new Image();
+    img.src=p.url;
+    await img.decode();
+    
     const [pred]=await model.classify(img);
     const label=pred.className.split(',')[0];
     p.sugar=await querySugar(label);
     p.state=p.sugar!==null?'done':'fail';
-  }catch{p.state='fail'}
-  renderPhotos();render();
+    p.label = label; // 保存食物標籤
+  } catch(e) {
+    console.error('AI預測失敗', e);
+    p.state='fail';
+  }
+  
+  renderPhotos();
 }
 
 async function querySugar(label){
   try{
     const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(label)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
-    const r=await fetch(WORKER+'?url='+encodeURIComponent(url));
+    const proxyUrl = `${WORKER}?url=${encodeURIComponent(url)}`;
+    
+    const r=await fetch(proxyUrl);
+    if (!r.ok) throw new Error(`HTTP error ${r.status}`);
+    
     const js=await r.json();
-    const arr=js.products.filter(p=>p.nutriments && p.nutriments.sugars_100g>0)
-                         .map(p=>p.nutriments.sugars_100g);
-    return arr.length?+(arr.reduce(function(s,v){return s+v},0)/arr.length).toFixed(1):null;
-  }catch{return null}
+    const arr=js.products
+      .filter(p=>p.nutriments?.sugars_100g>0)
+      .map(p=>p.nutriments.sugars_100g);
+      
+    return arr.length ? +(arr.reduce((s,v)=>s+v,0)/arr.length).toFixed(1) : null;
+  } catch(e) {
+    console.error('查詢糖分失敗', e, label);
+    return null;
+  }
 }
 
-/* --------- thumbnails ------------------------------------------- */
-$('photosWrap').onclick=function(e){
+/* ---------- thumbnails --------------------------------- */
+$('photosWrap').onclick=e=>{
   const i=e.target.dataset.idx;
   if(i==null)return;
   photos.splice(i,1);
-  renderPhotos();render();
+  renderPhotos();
 };
 
 function renderPhotos(){
-  $('photosWrap').innerHTML=photos.map(function(p,i){
-    return `<div class="photo">
-      <img src="${p.url}">
-      <em>${p.state==='loading'?'⏳':p.state==='fail'?'⚠️':p.sugar+' g'}</em>
+  $('photosWrap').innerHTML=photos.map((p,i)=>`
+    <div class="photo">
+      <img src="${p.url}" alt="食物照片">
+      <em>${p.state==='loading' ? '⏳' : p.state==='fail' ? '⚠️' : p.sugar+' g'}</em>
       <span data-idx="${i}">✖</span>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 }
 
-/* --------- 儲存 -------------------------------------------------- */
-$('form').onsubmit=function(e){
+/* ---------- 儲存 --------------------------------------- */
+$('form').onsubmit=e=>{
   e.preventDefault();
-  if(photos.some(function(p){return p.state==='loading'})){
-    alert('相片仍在分析中');return;
+  
+  if(photos.some(p=>p.state==='loading')){
+    alert('相片仍在分析中，請稍候');
+    return;
   }
+  
+  // 保存個人資料
   localStorage.dm_name=$('name').value.trim();
   localStorage.dm_age=$('age').value.trim();
-  records.unshift({
-    name:$('name').value.trim(),
-    age:$('age').value.trim(),
-    date:$('date').value,
-    meal:$('meal').value,
-    sugarMmol:parseFloat($('sugarMmol').value)||null,
-    photos:JSON.parse(JSON.stringify(photos))
-  });
-  alert('已儲存');
-  $('form').reset();$('date').value=today();
-  photos=[];renderPhotos();render();
+  
+  // 創建新紀錄
+  const newRecord = {
+    id: Date.now(), // 唯一ID用於識別
+    name: $('name').value.trim(),
+    age: $('age').value.trim(),
+    date: $('date').value,
+    meal: $('meal').value,
+    sugarMmol: parseFloat($('sugarMmol').value) || null,
+    photos: photos.map(p => ({
+      url: p.url,
+      state: p.state,
+      sugar: p.sugar,
+      label: p.label || ''
+    })),
+    timestamp: new Date().toISOString()
+  };
+  
+  // 添加到記錄列表
+  records.unshift(newRecord);
+  
+  // 保存到localStorage
+  try {
+    localStorage.setItem('dm_records', JSON.stringify(records));
+  } catch (e) {
+    console.error('保存記錄失敗', e);
+    alert('記錄保存失敗：' + e.message);
+  }
+  
+  alert('記錄已成功儲存');
+  
+  // 重置表單
+  $('sugarMmol').value = '';
+  $('date').value = today();
+  photos = [];
+  renderPhotos();
+  render();
 };
 
-/* --------- List / Cal / Chart ---------------------------------- */
+/* ---------- List / Cal / Chart ------------------------- */
 $('monthPick').onchange=render;
-$('chartBtn').onclick=function(){
+
+$('chartBtn').onclick=()=>{
   chartShown=!chartShown;
   $('chartBtn').textContent=chartShown?'隱藏圖表':'分析圖表';
-  renderChart();
+  document.querySelector('.chartWrap').style.display = chartShown ? 'block' : 'none';
+  if(chartShown) renderChart();
 };
 
 function render(){
+  // 先設置月份選擇器預設值為當前月份
+  if (!$('monthPick').value) {
+    $('monthPick').value = today().substring(0, 7);
+  }
+  
   buildList();
   buildCal();
-  if(chartShown)renderChart();
+  if(chartShown) renderChart();
 }
 
 function buildList(){
-  const ym=$('monthPick').value;
-  $('listBox').innerHTML=records.filter(function(r){
-    return !ym || r.date.startsWith(ym);
-  }).map(function(r){
-    return `<div class="list-card">
-      <h4>${r.date}（${r.meal}）</h4>
-      ${(r.name||r.age)?`<p>姓名：${r.name||'-'}　年齡：${r.age||'-'}</p>`:''}
-      ${r.sugarMmol!=null?`<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>`:''}
-      ${r.photos.length?`<div class="attach">
-        ${r.photos.map(function(p){
-          return `<figure><img src="${p.url}"><figcaption>${p.sugar!=null ? p.sugar : '?'} g</figcaption></figure>`;
-        }).join('')}
-      </div>`:''}
-    </div>`;
-  }).join('');
+  const ym = $('monthPick').value;
+  const filteredRecords = records.filter(r => !ym || r.date.startsWith(ym));
+  
+  if (filteredRecords.length === 0) {
+    $('listBox').innerHTML = '<div style="text-align:center;color:#666;padding:2rem">當月沒有記錄</div>';
+    return;
+  }
+  
+  $('listBox').innerHTML = filteredRecords.map(r => `
+    <div class="list-card">
+      <h4>${formatDate(r.date)}（${r.meal}）</h4>
+      ${r.name || r.age ? `<p>姓名：${r.name || '-'}　年齡：${r.age || '-'}</p>` : ''}
+      ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
+      ${r.photos && r.photos.length ? `<div class="attach">
+        ${r.photos.map(p => `<figure><img src="${p.url}" alt="食物照片">
+          <figcaption>${p.label ? p.label + '<br>' : ''}${p.sugar ?? '?'} g</figcaption></figure>`).join('')}
+      </div>` : ''}
+    </div>`).join('');
+}
+
+function formatDate(dateStr) {
+  // 將YYYY-MM-DD格式化為更友好的顯示
+  const parts = dateStr.split('-');
+  return `${parts[0]}年${parts[1]}月${parts[2]}日`;
 }
 
 function buildCal(){
-  const ym=$('monthPick').value||today().slice(0,7);
-  const arr=ym.split('-');
-  const y=parseInt(arr[0],10), m=parseInt(arr[1],10);
-  const first=new Date(y,m-1,1);
-  const days=new Date(y,m,0).getDate();
-  var html='<table class="calendar"><thead><tr>';
-  '日一二三四五六'.split('').forEach(function(d){html+='<th>'+d+'</th>'});
-  html+='</tr></thead><tbody><tr>';
-  for(var i=0;i<first.getDay();i++)html+='<td></td>';
-  for(var d=1;d<=days;d++){
-    var ds=ym+'-'+('0'+d).slice(-2);
-    var n=records.filter(function(r){return r.date===ds}).length;
-    html+='<td><strong>'+d+'</strong><br>'+ (n?('筆:'+n):'') +'</td>';
-    if((first.getDay()+d)%7===0 && d!==days)html+='</tr><tr>';
+  const ym = $('monthPick').value || today().substring(0, 7);
+  const [y, m] = ym.split('-').map(Number);
+  
+  // 獲取當月第一天是星期幾
+  const first = new Date(y, m-1, 1);
+  // 獲取當月天數
+  const days = new Date(y, m, 0).getDate();
+  
+  let html = '<table class="calendar"><thead><tr>' + 
+    '日一二三四五六'.split('').map(d => `<th>${d}</th>`).join('') +
+    '</tr></thead><tbody><tr>';
+    
+  // 第一週填充空白
+  for (let i = 0; i < first.getDay(); i++) {
+    html += '<td></td>';
   }
-  var rem=(first.getDay()+days)%7;
-  if(rem)html+='<td colspan="'+(7-rem)+'"></td>';
-  html+='</tr></tbody></table>';
-  $('calBox').innerHTML=html;
+  
+  // 填充日期
+  for (let d = 1; d <= days; d++) {
+    const ds = `${ym}-${String(d).padStart(2, '0')}`;
+    const dayRecords = records.filter(r => r.date === ds);
+    
+    html += `<td><strong>${d}</strong><br>`;
+    
+    if (dayRecords.length) {
+      dayRecords.forEach(r => {
+        const mealIcon = r.meal === '早餐' ? '🌅' : r.meal === '午餐' ? '☀️' : '🌙';
+        html += `<div style="font-size:0.7rem">${mealIcon} ${r.sugarMmol ? r.sugarMmol + 'mmol/L' : '無血糖'}</div>`;
+      });
+    }
+    
+    html += '</td>';
+    
+    // 換行
+    if ((first.getDay() + d) % 7 === 0 && d !== days) {
+      html += '</tr><tr>';
+    }
+  }
+  
+  // 最後一週填充空白
+  const rem = (first.getDay() + days) % 7;
+  if (rem) {
+    html += `<td colspan="${7-rem}"></td>`;
+  }
+  
+  html += '</tr></tbody></table>';
+  $('calBox').innerHTML = html;
 }
 
 function renderChart(){
-  if(!chartShown){$('chartWrap').style.display='none';return;}
-  const ym=$('monthPick').value;
-  const rows=records.filter(function(r){
-    return r.sugarMmol!=null && (!ym || r.date.startsWith(ym));
-  });
-  if(!rows.length){
-    alert('沒有血糖數據');
-    chartShown=false;
-    $('chartBtn').textContent='分析圖表';
+  if (!chartShown) return;
+  
+  const ym = $('monthPick').value;
+  const rows = records.filter(r => r.sugarMmol != null && (!ym || r.date.startsWith(ym)))
+    .sort((a, b) => a.date.localeCompare(b.date) || mealOrder(a.meal) - mealOrder(b.meal));
+  
+  function mealOrder(meal) {
+    return meal === '早餐' ? 0 : meal === '午餐' ? 1 : 2;
+  }
+  
+  if (!rows.length) {
+    document.querySelector('.chartWrap').innerHTML = '<div style="text-align:center;color:#666;padding:2rem">沒有足夠的血糖數據來生成圖表</div>';
     return;
   }
-  $('chartWrap').style.display='block';
-  if(chart) chart.destroy();
-  chart=new Chart($('sugarChart'),{
-    type:'line',
-    data:{
-      labels:rows.map(function(r){return r.date+' '+r.meal}),
-      datasets:[{
-        label:'血糖 (mmol/L)',
-        data:rows.map(function(r){return r.sugarMmol}),
-        borderColor:'#d32f2f',
-        backgroundColor:'#d32f2f33',
-        tension:.25,
-        pointRadius:4,
-        pointBackgroundColor:'#d32f2f'
-      }]
+  
+  // 銷毀舊圖表
+  if (chart) chart.destroy();
+  
+  // 建立新圖表容器
+  document.querySelector('.chartWrap').innerHTML = '<canvas id="sugarChart"></canvas>';
+  
+  // 定義正常範圍
+  const normalRange = {
+    breakfast: { min: 4.0, max: 7.0 },
+    lunch: { min: 4.0, max: 10.0 },
+    dinner: { min: 4.0, max: 10.0 }
+  };
+  
+  // 創建圖表
+  chart = new Chart($('sugarChart'), {
+    type: 'line',
+    data: {
+      labels: rows.map(r => formatDate(r.date).substring(5) + ' ' + r.meal),
+      datasets: [
+        {
+          label: '血糖 (mmol/L)',
+          data: rows.map(r => r.sugarMmol),
+          borderColor: '#d32f2f',
+          backgroundColor: 'rgba(211, 47, 47, 0.2)',
+          tension: 0.3,
+          pointRadius: 5,
+          pointBackgroundColor: '#d32f2f',
+          fill: false
+        }
+      ]
     },
-    options:{maintainAspectRatio:false}
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const value = context.raw;
+              let meal = rows[context.dataIndex].meal;
+              let range = meal === '早餐' ? normalRange.breakfast :
+                          meal === '午餐' ? normalRange.lunch : normalRange.dinner;
+              
+              let status = value < range.min ? '偏低' : 
+                          value > range.max ? '偏高' : '正常';
+              
+              return [`血糖值: ${value} mmol/L`, `狀態: ${status}`];
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: false,
+          min: 3,
+          max: Math.max(15, ...rows.map(r => r.sugarMmol)) + 1,
+          title: {
+            display: true,
+            text: '血糖值 (mmol/L)'
+          }
+        }
+      }
+    }
   });
 }
 </script>
 </body>
-      <script>
-(function(){
-  const el=document.createElement('pre');el.id='dbg';document.body.append(el);
-  function print(type,args){
-    el.textContent+=
-      '['+type+'] '+[].map.call(args,a=>typeof a=='object'
-          ?JSON.stringify(a).slice(0,120)
-          :String(a)).join(' ')+'\n';
-    el.scrollTop=el.scrollHeight;
-  }
-  ['log','warn','error'].forEach(k=>{
-    const orig=console[k];
-    console[k]=function(){orig.apply(console,arguments);print(k,arguments)};
-  });
-  window.addEventListener('error',e=>print('EX', [e.message]));
-})();
-</script>
 </html>
