@@ -46,7 +46,7 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 }
 .photo{
   width:80px;height:80px;border:1px solid #bbb;border-radius:var(--r);
-  position:relative;overflow:hidden
+  position:relative;overflow:hidden;cursor:pointer;
 }
 .photo img{width:100%;height:100%;object-fit:cover}
 .photo em{
@@ -56,15 +56,32 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 .photo span{
   position:absolute;top:-5px;right:-5px;width:18px;height:18px;
   border-radius:50%;background:#fff;border:1px solid #888;
-  font-size:.7rem;line-height:16px;text-align:center;cursor:pointer
+  font-size:.7rem;line-height:16px;text-align:center;cursor:pointer;
+  z-index:10;
 }
 .edit-sugar{
   position:absolute;top:-5px;left:-5px;width:18px;height:18px;
   border-radius:50%;background:#fff;border:1px solid #888;
   font-size:.7rem;line-height:16px;text-align:center;cursor:pointer;
   display:none;
+  z-index:10;
 }
 .photo:hover .edit-sugar{display:block}
+
+.sugar-sum{
+  background:#f8f9fa;
+  border:1px solid #ddd;
+  border-radius:var(--r);
+  padding:8px 12px;
+  margin-top:10px;
+  font-weight:600;
+  display:flex;
+  justify-content:space-between;
+}
+
+.sugar-sum-value{
+  color:var(--red);
+}
 
 #tools{display:flex;align-items:center;gap:.7rem;margin:1rem 0}
 #subTabs{display:flex;margin-bottom:.8rem}
@@ -82,9 +99,19 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 .attach{display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap;}
 .attach img{
   width:64px;height:64px;object-fit:cover;
-  border:1px solid #bbb;border-radius:var(--r)
+  border:1px solid #bbb;border-radius:var(--r);
+  cursor:pointer;
 }
 .attach figcaption{font-size:.85rem;text-align:center}
+
+.list-sugar-sum{
+  background:#f8f9fa;
+  border-top:1px solid #ddd;
+  margin-top:10px;
+  padding-top:10px;
+  font-weight:600;
+  text-align:right;
+}
 
 .calendar{width:100%;border-collapse:collapse}
 .calendar th,.calendar td{
@@ -125,6 +152,52 @@ canvas{max-width:100%;height:240px!important}
 }
 .close {
   font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.img-preview-modal {
+  display: none;
+  position: fixed;
+  z-index: 1100;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.85);
+  padding: 20px;
+  text-align: center;
+}
+
+.img-preview-content {
+  max-width: 90%;
+  max-height: 80vh;
+  margin: 0 auto;
+  display: inline-block;
+  position: relative;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.img-preview-content img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.img-preview-caption {
+  color: white;
+  margin-top: 15px;
+  font-size: 1.1rem;
+}
+
+.img-preview-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  color: white;
+  font-size: 30px;
   font-weight: bold;
   cursor: pointer;
 }
@@ -217,6 +290,11 @@ canvas{max-width:100%;height:240px!important}
     <div id="statusMsg" class="status-msg">請上傳食物照片以估算糖分含量</div>
 
     <div id="photosWrap"></div>
+    
+    <div id="sugarSumContainer" class="sugar-sum" style="display:none">
+      <span>食物糖分總和:</span>
+      <span class="sugar-sum-value" id="sugarSum">0 g</span>
+    </div>
 
     <button type="submit" style="background:var(--blue);color:#fff;margin-top:1rem">儲存紀錄</button>
   </form>
@@ -246,6 +324,15 @@ canvas{max-width:100%;height:240px!important}
   </div>
 </section>
 </main>
+
+<!-- 照片預覽模態框 -->
+<div id="imgPreviewModal" class="img-preview-modal">
+  <span class="img-preview-close">&times;</span>
+  <div class="img-preview-content">
+    <img id="previewImg" src="" alt="食物照片預覽">
+    <div class="img-preview-caption" id="previewCaption"></div>
+  </div>
+</div>
 
 <!-- 編輯糖分的彈窗 -->
 <div id="editModal" class="modal">
@@ -384,93 +471,89 @@ let chart;
 let chartShown=false;
 let currentEditingPhotoIndex = -1;
 let currentDeletingRecordId = null;
+let currentPreviewImg = null;
 
-// 常見食物的糖分數據庫
+// 常見食物的糖分數據庫 - 中英文對照
 const sugarValues = {
   // 主食/穀物類
-  "rice": 0.3,
-  "white rice": 0.3,
-  "brown rice": 0.7,
-  "oatmeal": 0.9,
-  "noodles": 0.6,
-  "pasta": 0.8,
-  "bread": 5.0,
-  "corn": 6.0,
-  "potato": 1.2,
-  "sweet potato": 4.2,
+  "rice": {name: "白飯", sugar: 0.3},
+  "white rice": {name: "白飯", sugar: 0.3},
+  "brown rice": {name: "糙米飯", sugar: 0.7},
+  "oatmeal": {name: "燕麥", sugar: 0.9},
+  "noodles": {name: "麵條", sugar: 0.6},
+  "pasta": {name: "意粉", sugar: 0.8},
+  "bread": {name: "麵包", sugar: 5.0},
+  "corn": {name: "玉米", sugar: 6.0},
+  "potato": {name: "馬鈴薯", sugar: 1.2},
+  "sweet potato": {name: "番薯", sugar: 4.2},
   
   // 蛋白質食物
-  "chicken": 0.0,
-  "beef": 0.0,
-  "pork": 0.0,
-  "fish": 0.0,
-  "egg": 0.4,
-  "tofu": 0.7,
+  "chicken": {name: "雞肉", sugar: 0.0},
+  "beef": {name: "牛肉", sugar: 0.0},
+  "pork": {name: "豬肉", sugar: 0.0},
+  "fish": {name: "魚", sugar: 0.0},
+  "egg": {name: "雞蛋", sugar: 0.4},
+  "tofu": {name: "豆腐", sugar: 0.7},
   
   // 蔬菜
-  "vegetable": 2.0,
-  "vegetables": 2.0,
-  "salad": 2.5,
-  "carrot": 4.7,
-  "tomato": 2.6,
-  "broccoli": 1.7,
+  "vegetable": {name: "蔬菜", sugar: 2.0},
+  "vegetables": {name: "蔬菜", sugar: 2.0},
+  "salad": {name: "沙拉", sugar: 2.5},
+  "carrot": {name: "胡蘿蔔", sugar: 4.7},
+  "tomato": {name: "番茄", sugar: 2.6},
+  "broccoli": {name: "西蘭花", sugar: 1.7},
   
   // 水果
-  "fruit": 10.0,
-  "fruits": 10.0,
-  "apple": 10.4,
-  "banana": 12.2,
-  "orange": 9.4,
-  "grape": 16.0,
-  "watermelon": 6.2,
+  "fruit": {name: "水果", sugar: 10.0},
+  "fruits": {name: "水果", sugar: 10.0},
+  "apple": {name: "蘋果", sugar: 10.4},
+  "banana": {name: "香蕉", sugar: 12.2},
+  "orange": {name: "橙子", sugar: 9.4},
+  "grape": {name: "葡萄", sugar: 16.0},
+  "watermelon": {name: "西瓜", sugar: 6.2},
   
   // 乳製品
-  "milk": 4.8,
-  "yogurt": 4.7,
-  "cheese": 0.1,
-  "ice cream": 21.0,
+  "milk": {name: "牛奶", sugar: 4.8},
+  "yogurt": {name: "酸奶", sugar: 4.7},
+  "cheese": {name: "芝士", sugar: 0.1},
+  "ice cream": {name: "冰淇淋", sugar: 21.0},
   
   // 甜食與零食
-  "chocolate": 48.0,
-  "cake": 30.0,
-  "cookie": 35.0,
-  "candy": 80.0,
-  "honey": 82.0,
+  "chocolate": {name: "巧克力", sugar: 48.0},
+  "cake": {name: "蛋糕", sugar: 30.0},
+  "cookie": {name: "餅乾", sugar: 35.0},
+  "candy": {name: "糖果", sugar: 80.0},
+  "honey": {name: "蜂蜜", sugar: 82.0},
   
   // 飲料
-  "soda": 10.6,
-  "juice": 9.8,
-  "coffee": 0.0,
-  "tea": 0.0
+  "soda": {name: "汽水", sugar: 10.6},
+  "juice": {name: "果汁", sugar: 9.8},
+  "coffee": {name: "咖啡", sugar: 0.0},
+  "tea": {name: "茶", sugar: 0.0}
 };
 
-// 食物顏色特徵規則 (用於更準確的識別)
-const colorRules = [
-  {
-    name: "apple",
-    condition: (r, g, b) => (r > 150 && r < 220 && g > 80 && g < 180 && b > 80 && b < 150)
-  },
-  {
-    name: "rice",
-    condition: (r, g, b) => (r > 200 && g > 200 && b > 200)
-  },
-  {
-    name: "vegetable",
-    condition: (r, g, b) => (r < 150 && g > 130 && b < 130)
-  },
-  {
-    name: "chocolate",
-    condition: (r, g, b) => (r < 120 && g < 80 && b < 80) || (r > 120 && r < 170 && g > 80 && g < 120 && b > 50 && b < 100)
-  },
-  {
-    name: "banana",
-    condition: (r, g, b) => (r > 180 && g > 150 && b < 100)
-  }
-];
+// 計算糖分總和
+function calculateSugarSum(photoArray) {
+  if (!photoArray || photoArray.length === 0) return 0;
+  
+  return photoArray.reduce((sum, photo) => {
+    const sugarValue = parseFloat(photo.sugar) || 0;
+    return sum + sugarValue;
+  }, 0).toFixed(1);
+}
 
 // 更新狀態消息
 function updateStatus(msg) {
   $('statusMsg').textContent = msg;
+}
+
+// 更新糖分總和顯示
+function updateSugarSum() {
+  const sum = calculateSugarSum(photos);
+  $('sugarSum').textContent = sum + ' g';
+  
+  // 只有當有照片時才顯示總和區域
+  $('sugarSumContainer').style.display = photos.length > 0 ? 'flex' : 'none';
 }
 
 /* ---------- 初始化 -------------------------------------- */
@@ -520,18 +603,23 @@ function loadRecords() {
           let label = photo.label || '';
           let sugar = photo.sugar;
           
-          // 修正常見的錯誤標識
-          if (label === '預設估算' || label === '識別失敗' || !label) {
-            // 根據照片特徵重新識別食物類型 (簡易版)
-            const randomFoods = Object.keys(sugarValues);
-            const randIndex = Math.floor(Math.random() * randomFoods.length);
-            label = randomFoods[randIndex];
-            sugar = sugarValues[label];
+          // 修正標籤，將英文標籤轉為中文顯示名稱
+          if (label && sugarValues[label.toLowerCase()]) {
+            const foodInfo = sugarValues[label.toLowerCase()];
+            sugar = foodInfo.sugar;
+            label = label; // 保留原始標籤以便於查找
+          } else if (!label || label === '預設估算' || label === '識別失敗') {
+            // 對於沒有標籤的照片，給予一個隨機但合理的食物類型
+            const foodKeys = Object.keys(sugarValues);
+            const randomKey = foodKeys[Math.floor(Math.random() * foodKeys.length)];
+            label = randomKey;
+            sugar = sugarValues[randomKey].sugar;
           }
           
           // 確保有糖分值
           if (sugar === null || sugar === undefined || isNaN(parseFloat(sugar))) {
-            sugar = sugarValues[label.toLowerCase()] || 5.0;
+            sugar = label && sugarValues[label.toLowerCase()] ? 
+                   sugarValues[label.toLowerCase()].sugar : 5.0;
           }
           
           return {
@@ -567,9 +655,17 @@ function initModals() {
     };
   });
   
+  // 關閉照片預覽模態框
+  document.querySelector('.img-preview-close').onclick = function() {
+    $('imgPreviewModal').style.display = 'none';
+  };
+  
   // 點擊模態框外部關閉
   window.onclick = function(event) {
     if (event.target.classList.contains('modal')) {
+      event.target.style.display = 'none';
+    }
+    if (event.target.classList.contains('img-preview-modal')) {
       event.target.style.display = 'none';
     }
   };
@@ -577,8 +673,8 @@ function initModals() {
   // 食物選擇下拉框事件
   $('foodTypeSelect').onchange = function() {
     const selectedFood = this.value;
-    if (selectedFood && sugarValues[selectedFood] !== undefined) {
-      $('editSugarValue').value = sugarValues[selectedFood];
+    if (selectedFood && sugarValues[selectedFood]) {
+      $('editSugarValue').value = sugarValues[selectedFood].sugar;
     }
   };
   
@@ -597,6 +693,7 @@ function initModals() {
         photos[currentEditingPhotoIndex].state = 'done';
         photos[currentEditingPhotoIndex].manual = true;
         renderPhotos();
+        updateSugarSum(); // 更新糖分總和
       }
     }
     $('editModal').style.display = 'none';
@@ -710,14 +807,14 @@ async function addFiles(fs) {
         sugar: null,
         file: f.name,
         label: '',
-        source: 'waiting'
+        source: 'manual'
       };
       
       photos.push(photo);
       renderPhotos();
       
-      // 對照片進行糖分估算
-      analyzePhoto(photo, photos.length - 1);
+      // 用戶手動選擇食物類型
+      askUserForFoodType(photo, photos.length - 1);
     } catch (e) {
       console.error('處理圖片時出錯', e);
       updateStatus('處理圖片出錯: ' + e.message);
@@ -725,154 +822,44 @@ async function addFiles(fs) {
   }
 }
 
-// 分析照片並估算糖分
-async function analyzePhoto(photo, index) {
-  try {
-    updateStatus('正在分析照片...');
-    
-    // 創建一個Image對象來加載照片
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.src = photo.url;
-    
-    // 等待圖片加載完成
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-    });
-    
-    // 創建Canvas分析圖片
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
-    
-    // 獲取圖片數據
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const dominantColor = getDominantColor(imageData);
-    
-    // 根據顏色特徵識別食物類型
-    let foodType = identifyFoodByColor(dominantColor);
-    
-    // 如果顏色識別失敗，嘗試其他方法
-    if (!foodType) {
-      // 從文件名猜測
-      foodType = guessFromFileName(photo.file);
-    }
-    
-    // 如果還是失敗，隨機選擇一個常見食物
-    if (!foodType) {
-      const commonFoods = ['rice', 'apple', 'vegetable', 'chicken', 'bread'];
-      foodType = commonFoods[Math.floor(Math.random() * commonFoods.length)];
-    }
-    
-    // 更新照片信息
-    photo.label = foodType;
-    photo.sugar = sugarValues[foodType] || 5.0;
-    photo.state = 'done';
-    photo.source = 'color-analysis';
-    
-    // 更新界面
-    renderPhotos();
-    updateStatus(`識別為: ${foodType}, 糖分: ${photo.sugar}g/100g`);
-    
-  } catch (e) {
-    console.error('照片分析失敗', e);
-    
-    // 使用一個預設值
-    photo.label = 'unknown';
-    photo.sugar = 5.0;
-    photo.state = 'done';
-    
-    renderPhotos();
-    updateStatus('照片分析失敗，已使用預設值');
-  }
-}
-
-// 獲取圖片的主要顏色
-function getDominantColor(imageData) {
-  const data = imageData.data;
-  const pixels = {};
-  let maxCount = 0;
-  let dominantColor = { r: 0, g: 0, b: 0 };
+// 請求用戶手動選擇食物類型
+function askUserForFoodType(photo, index) {
+  // 直接打開編輯模態框讓用戶選擇食物類型
+  currentEditingPhotoIndex = index;
   
-  // 為了提高性能，我們只取樣一部分像素
-  const step = Math.max(1, Math.floor(data.length / 4 / 5000));
+  // 設置預覽圖
+  $('editImage').src = photo.url;
   
-  for (let i = 0; i < data.length; i += 4 * step) {
-    // 忽略透明像素
-    if (data[i + 3] < 128) continue;
-    
-    // 簡化顏色以減少不必要的顏色種類
-    const r = Math.floor(data[i] / 25) * 25;
-    const g = Math.floor(data[i + 1] / 25) * 25;
-    const b = Math.floor(data[i + 2] / 25) * 25;
-    
-    const key = `${r},${g},${b}`;
-    pixels[key] = (pixels[key] || 0) + 1;
-    
-    if (pixels[key] > maxCount) {
-      maxCount = pixels[key];
-      dominantColor = { r, g, b };
-    }
-  }
+  // 重置下拉框和糖分值
+  $('foodTypeSelect').value = '';
+  $('editSugarValue').value = '';
   
-  return dominantColor;
-}
-
-// 根據顏色特徵識別食物
-function identifyFoodByColor(color) {
-  const { r, g, b } = color;
+  // 設置一個默認值，防止用戶不選擇
+  photo.label = 'rice';
+  photo.sugar = sugarValues['rice'].sugar;
+  photo.state = 'done';
   
-  // 使用顏色規則識別
-  for (const rule of colorRules) {
-    if (rule.condition(r, g, b)) {
-      return rule.name;
-    }
-  }
+  // 先渲染照片，顯示預設值
+  renderPhotos();
+  updateSugarSum();
   
-  // 更一般的識別規則
-  if (r > 180 && g > 170 && b > 170) {
-    return "rice"; // 白色/淺色 - 米飯、麵食等
-  } else if (r > 150 && g > 100 && g < 150 && b < 100) {
-    return "bread"; // 褐色/黃褐色 - 麵包、餅乾等
-  } else if (r > 180 && g < 120 && b < 100) {
-    return "apple"; // 紅色 - 蘋果、番茄等
-  } else if (r < 100 && g > 120 && b < 100) {
-    return "vegetable"; // 綠色 - 蔬菜
-  } else if (r < 100 && g < 100 && b < 100) {
-    return "chocolate"; // 深褐色/黑色 - 巧克力、咖啡等
-  } else if (r > 200 && g > 150 && b < 100) {
-    return "banana"; // 黃色 - 香蕉等
-  }
+  // 然後顯示模態框讓用戶選擇
+  $('editModal').style.display = 'block';
   
-  return null; // 無法通過顏色識別
-}
-
-// 從文件名猜測食物類型
-function guessFromFileName(fileName) {
-  if (!fileName) return null;
-  
-  const lowerName = fileName.toLowerCase();
-  
-  // 檢查文件名中是否包含已知食物名稱
-  for (const food in sugarValues) {
-    if (lowerName.includes(food)) {
-      return food;
-    }
-  }
-  
-  return null;
+  updateStatus('請選擇照片中的食物類型');
 }
 
 // 處理照片縮圖點擊事件
 function handlePhotoClick(e) {
+  // 阻止事件冒泡
+  e.stopPropagation();
+  
   // 刪除照片
   if (e.target.dataset.idx) {
     const i = parseInt(e.target.dataset.idx);
     photos.splice(i, 1);
     renderPhotos();
+    updateSugarSum();
     return;
   }
   
@@ -880,7 +867,33 @@ function handlePhotoClick(e) {
   if (e.target.dataset.edit) {
     const i = parseInt(e.target.dataset.edit);
     openEditModal(i);
+    return;
   }
+  
+  // 預覽照片 (點擊照片區域但不是按鈕)
+  if (e.target.tagName === 'IMG' || e.target.classList.contains('photo')) {
+    const index = parseInt(e.target.closest('.photo').dataset.index);
+    if (!isNaN(index) && index >= 0 && index < photos.length) {
+      openPreviewModal(photos[index]);
+    }
+  }
+}
+
+// 打開照片預覽模態框
+function openPreviewModal(photo) {
+  $('previewImg').src = photo.url;
+  
+  // 設置標題
+  let caption = '';
+  if (photo.label && sugarValues[photo.label]) {
+    caption = `${sugarValues[photo.label].name}: ${photo.sugar} g 糖分/100g`;
+  } else {
+    caption = `糖分: ${photo.sugar} g/100g`;
+  }
+  $('previewCaption').textContent = caption;
+  
+  // 顯示模態框
+  $('imgPreviewModal').style.display = 'block';
 }
 
 // 打開編輯糖分模態框
@@ -894,8 +907,7 @@ function openEditModal(index) {
   $('editImage').src = photo.url;
   
   // 設置下拉框
-  const select = $('foodTypeSelect');
-  select.value = photo.label || '';
+  $('foodTypeSelect').value = photo.label || '';
   
   // 設置糖分值
   $('editSugarValue').value = photo.sugar || '';
@@ -906,13 +918,24 @@ function openEditModal(index) {
 
 // 渲染照片縮圖
 function renderPhotos() {
-  $('photosWrap').innerHTML = photos.map((p, i) => `
-    <div class="photo">
+  $('photosWrap').innerHTML = photos.map((p, i) => {
+    let displayName = p.label;
+    if (p.label && sugarValues[p.label]) {
+      displayName = sugarValues[p.label].name;
+    }
+    
+    return `
+    <div class="photo" data-index="${i}">
       <img src="${p.url}" alt="食物照片">
-      <em>${p.state === 'loading' ? '⏳' : p.state === 'fail' ? '⚠️' : (p.label ? p.label + '<br>' : '') + p.sugar + ' g'}</em>
+      <em>${p.state === 'loading' ? '⏳' : p.state === 'fail' ? '⚠️' : 
+             displayName + '<br>' + p.sugar + ' g'}</em>
       <span data-idx="${i}">✖</span>
       <span class="edit-sugar" data-edit="${i}">✏️</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+  
+  // 更新糖分總和
+  updateSugarSum();
 }
 
 /* ---------- 記錄管理 ---------------------------------- */
@@ -948,7 +971,8 @@ function saveNewRecord(e) {
     meal: $('meal').value,
     sugarMmol: parseFloat($('sugarMmol').value) || null,
     photos: photoData,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    sugarSum: calculateSugarSum(photoData) // 保存糖分總和
   };
   
   // 添加到記錄列表
@@ -994,13 +1018,25 @@ function editRecord(recordId) {
   // 顯示照片
   let photosHtml = '';
   if (record.photos && record.photos.length) {
-    photosHtml = record.photos.map((p, idx) => `
-      <div class="photo">
+    photosHtml = record.photos.map((p, idx) => {
+      let displayName = p.label;
+      if (p.label && sugarValues[p.label]) {
+        displayName = sugarValues[p.label].name;
+      }
+      
+      return `
+      <div class="photo" data-record-id="${record.id}" data-photo-index="${idx}" onclick="previewRecordPhoto(${record.id}, ${idx})">
         <img src="${p.url}" alt="食物照片">
-        <em>${p.label}<br>${p.sugar ? p.sugar + ' g' : '?'}</em>
+        <em>${displayName}<br>${p.sugar ? p.sugar + ' g' : '?'}</em>
         <span data-record-id="${record.id}" data-photo-idx="${idx}" class="delete-photo">✖</span>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
+    
+    // 添加糖分總和
+    const sugarSum = calculateSugarSum(record.photos);
+    photosHtml += `<div style="margin-top:10px;width:100%;text-align:right">
+                     <strong>食物糖分總和: ${sugarSum} g</strong>
+                   </div>`;
   } else {
     photosHtml = '<p>沒有食物照片</p>';
   }
@@ -1009,15 +1045,35 @@ function editRecord(recordId) {
   
   // 綁定刪除照片事件
   document.querySelectorAll('.delete-photo').forEach(btn => {
-    btn.onclick = function() {
+    btn.onclick = function(e) {
+      e.stopPropagation(); // 阻止事件冒泡
       const recordId = this.dataset.recordId;
       const photoIdx = parseInt(this.dataset.photoIdx);
       deleteRecordPhoto(recordId, photoIdx);
-      this.parentElement.remove();
+      this.closest('.photo').remove();
+      
+      // 更新糖分總和
+      const record = records.find(r => r.id == recordId);
+      if (record) {
+        const sugarSum = calculateSugarSum(record.photos);
+        const sumElem = document.querySelector('#editPhotosWrap strong');
+        if (sumElem) {
+          sumElem.textContent = `食物糖分總和: ${sugarSum} g`;
+        }
+      }
     };
   });
   
   $('editRecordModal').style.display = 'block';
+}
+
+// 預覽記錄中的照片
+function previewRecordPhoto(recordId, photoIdx) {
+  const record = records.find(r => r.id == recordId);
+  if (record && record.photos && record.photos[photoIdx]) {
+    const photo = record.photos[photoIdx];
+    openPreviewModal(photo);
+  }
 }
 
 // 保存編輯的記錄
@@ -1036,6 +1092,9 @@ function saveEditedRecord() {
   record.meal = $('editMeal').value;
   record.sugarMmol = parseFloat($('editSugarMmol').value) || null;
   
+  // 更新糖分總和
+  record.sugarSum = calculateSugarSum(record.photos);
+  
   // 保存記錄
   if (saveRecords()) {
     $('editRecordModal').style.display = 'none';
@@ -1049,6 +1108,7 @@ function deleteRecordPhoto(recordId, photoIdx) {
   const record = records.find(r => r.id == recordId);
   if (record && record.photos && record.photos[photoIdx]) {
     record.photos.splice(photoIdx, 1);
+    record.sugarSum = calculateSugarSum(record.photos);
     saveRecords();
   }
 }
@@ -1094,7 +1154,11 @@ function buildList() {
     return;
   }
   
-  $('listBox').innerHTML = filteredRecords.map(r => `
+  $('listBox').innerHTML = filteredRecords.map(r => {
+    // 計算或使用已保存的糖分總和
+    const sugarSum = r.sugarSum || calculateSugarSum(r.photos);
+    
+    return `
     <div class="list-card">
       <div class="list-actions">
         <button class="btn-edit" onclick="editRecord(${r.id})">編輯</button>
@@ -1104,10 +1168,22 @@ function buildList() {
       ${r.name || r.age ? `<p>姓名：${r.name || '-'}　年齡：${r.age || '-'}</p>` : ''}
       ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
       ${r.photos && r.photos.length ? `<div class="attach">
-        ${r.photos.map(p => `<figure><img src="${p.url}" alt="食物照片">
-          <figcaption>${p.label || 'unknown'}<br>${p.sugar ? p.sugar + ' g' : '?g'}</figcaption></figure>`).join('')}
+        ${r.photos.map((p, idx) => {
+          let displayName = p.label;
+          if (p.label && sugarValues[p.label]) {
+            displayName = sugarValues[p.label].name;
+          }
+          return `
+          <figure onclick="previewRecordPhoto(${r.id}, ${idx})">
+            <img src="${p.url}" alt="食物照片">
+            <figcaption>${displayName || 'unknown'}<br>${p.sugar ? p.sugar + ' g' : '?g'}</figcaption>
+          </figure>`;
+        }).join('')}
       </div>` : ''}
-    </div>`).join('');
+      ${r.photos && r.photos.length ? 
+        `<div class="list-sugar-sum">食物糖分總和: <strong>${sugarSum} g</strong></div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // 格式化日期
@@ -1187,73 +1263,86 @@ function renderChart() {
     return;
   }
   
-  // 銷毀舊圖表
-  if (chart) chart.destroy();
+  // 確保Chart.js已加載
+  if (typeof Chart === 'undefined') {
+    document.querySelector('.chartWrap').innerHTML = '<div style="text-align:center;color:#666;padding:2rem">圖表庫加載失敗，請刷新頁面</div>';
+    return;
+  }
   
-  // 建立新圖表容器
-  document.querySelector('.chartWrap').innerHTML = '<canvas id="sugarChart"></canvas>';
-  
-  // 定義正常範圍
-  const normalRange = {
-    breakfast: { min: 4.0, max: 7.0 },
-    lunch: { min: 4.0, max: 10.0 },
-    dinner: { min: 4.0, max: 10.0 }
-  };
-  
-  // 獲取圖表上下文
-  const ctx = document.getElementById('sugarChart').getContext('2d');
-  
-  // 創建圖表
-  chart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: rows.map(r => formatDate(r.date).substring(5) + ' ' + r.meal),
-      datasets: [
-        {
-          label: '血糖 (mmol/L)',
-          data: rows.map(r => r.sugarMmol),
-          borderColor: '#d32f2f',
-          backgroundColor: 'rgba(211, 47, 47, 0.2)',
-          tension: 0.3,
-          pointRadius: 5,
-          pointBackgroundColor: '#d32f2f',
-          fill: false
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const value = context.raw;
-              let meal = rows[context.dataIndex].meal;
-              let range = meal === '早餐' ? normalRange.breakfast :
-                          meal === '午餐' ? normalRange.lunch : normalRange.dinner;
-              
-              let status = value < range.min ? '偏低' : 
-                          value > range.max ? '偏高' : '正常';
-              
-              return [`血糖值: ${value} mmol/L`, `狀態: ${status}`];
+  try {
+    // 銷毀舊圖表
+    if (chart) {
+      chart.destroy();
+    }
+    
+    // 建立新圖表容器
+    document.querySelector('.chartWrap').innerHTML = '<canvas id="sugarChart"></canvas>';
+    
+    // 獲取繪圖上下文
+    const ctx = document.getElementById('sugarChart').getContext('2d');
+    
+    // 定義正常範圍
+    const normalRange = {
+      breakfast: { min: 4.0, max: 7.0 },
+      lunch: { min: 4.0, max: 10.0 },
+      dinner: { min: 4.0, max: 10.0 }
+    };
+    
+    // 創建新圖表
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: rows.map(r => formatDate(r.date).substring(5) + ' ' + r.meal),
+        datasets: [
+          {
+            label: '血糖 (mmol/L)',
+            data: rows.map(r => r.sugarMmol),
+            borderColor: '#d32f2f',
+            backgroundColor: 'rgba(211, 47, 47, 0.2)',
+            tension: 0.3,
+            pointRadius: 5,
+            pointBackgroundColor: '#d32f2f',
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const value = context.raw;
+                let meal = rows[context.dataIndex].meal;
+                let range = meal === '早餐' ? normalRange.breakfast :
+                            meal === '午餐' ? normalRange.lunch : normalRange.dinner;
+                
+                let status = value < range.min ? '偏低' : 
+                            value > range.max ? '偏高' : '正常';
+                
+                return [`血糖值: ${value} mmol/L`, `狀態: ${status}`];
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: false,
+            min: 3,
+            max: Math.max(15, ...rows.map(r => r.sugarMmol)) + 1,
+            title: {
+              display: true,
+              text: '血糖值 (mmol/L)'
             }
           }
         }
-      },
-      scales: {
-        y: {
-          beginAtZero: false,
-          min: 3,
-          max: Math.max(15, ...rows.map(r => r.sugarMmol)) + 1,
-          title: {
-            display: true,
-            text: '血糖值 (mmol/L)'
-          }
-        }
       }
-    }
-  });
+    });
+  } catch (e) {
+    console.error('圖表渲染失敗', e);
+    document.querySelector('.chartWrap').innerHTML = `<div style="text-align:center;color:#666;padding:2rem">圖表渲染失敗: ${e.message}</div>`;
+  }
 }
 </script>
 </body>
