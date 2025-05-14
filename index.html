@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--  糖尿病健康管理  v3.2  (2024-06-26)
-     • Cloudflare Worker 代理查 OpenFoodFacts
-     • MobileNet Top-3 標籤，提高命中率
+     • 經 Cloudflare Worker 代理查 OpenFoodFacts，解決封鎖
+     • 取 MobileNet Top-3 標籤，提高命中率
 ----------------------------------------------------------------- -->
 <html lang="zh-Hant">
 <head>
@@ -9,7 +9,6 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>糖尿病健康管理</title>
 <style>
-/* ===== CSS（與 v3.1 相同） ===== */
 :root{--c1:#1976d2;--c2:#d32f2f;--r:8px;font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
 *{box-sizing:border-box;margin:0}
 body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
@@ -18,6 +17,7 @@ nav{display:flex}nav button{flex:1;padding:.7rem;border:0;background:#eee;font-s
 nav button.active{color:var(--c1);background:#fff;font-weight:700;border-bottom:3px solid var(--c1)}
 main{flex:1;width:95%;max-width:900px;margin:1rem auto}
 section{display:none}section.active{display:block}
+/* --- 其他 CSS 全與 v3.1 相同 --- */
 form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
 label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
 input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
@@ -29,32 +29,32 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
 .photo-thumb span.del{position:absolute;top:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
 .photo-thumb span.edit{position:absolute;bottom:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
 .photo-thumb em{position:absolute;left:0;right:0;bottom:0;background:#fff;color:#000;font-size:.9rem;font-weight:600;text-align:center;cursor:pointer}
-/* 其他 CSS（月曆、圖表、Modal）同 v3.1 一樣 */
+/* 下面 Calendar / Chart / Modal 的 CSS 與 v3.1 完全相同，為節省篇幅未再重複 */
 </style>
 </head>
 <body>
 <header><h1>糖尿病健康管理</h1></header>
 
-<!-- ===== 版面 HTML（與 v3.1 相同，省略標籤重貼） ===== -->
-<!-- ... 略 ... -->
+<!-- ===== 版面 HTML 與 v3.1 完全一致，略 ===== -->
+<!--  ...（請保持上一次的版面標籤，未修改） ... -->
 
-<!-- JS 外部庫 -->
+<!-- scripts -->
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.1/dist/mobilenet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 
 <script>
-/* ---------- 1. 你的 Worker 代理 URL ---------- */
-const WORKER = 'https://off-proxy.leisure9654.workers.dev/   // ← 改呢度
+/* ========= 你自己的 Worker 代理網址 ========= */
+const WORKER = 'https://off-proxy.leisure9654.workers.dev/
 
-/* ---------- 2. 共用工具 ---------- */
+/* === util === */
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 
-/* ---------- 3. 全域狀態 ---------- */
+/* === state === */
 let photos=[],records=[],chartVisible=false,chart,stream,dlgIdx=-1,mobilenetModel;
 
-/* ---------- 4. 初始 ---------- */
+/* === init === */
 document.addEventListener('DOMContentLoaded',async()=>{
   $('date').value=today();
   $('name').value=localStorage.getItem('dm_name')||'';$('age').value=localStorage.getItem('dm_age')||'';
@@ -64,39 +64,43 @@ document.addEventListener('DOMContentLoaded',async()=>{
 $('showInfo').onchange=togglePersonal;
 function togglePersonal(){const s=$('showInfo').checked;document.querySelector('.personal').style.display=s?'flex':'none';$('name').required=$('age').required=s;}
 
-/* ---------- 5.（Tabs、拍照、表單、列表、月曆、圖表）代碼與 v3.1 全相同 ---------- */
-/*     只列出 AI 部分有改動  --------------------------------------- */
+/* === 其餘 Tabs / Camera / List / Chart 代碼與 v3.1 相同，唯 aiEstimate & fetchSugar 有改 === */
 
-/* === AI 推論 + 查詢含糖量 === */
+/* === AI 分析相片 === */
 async function aiEstimate(p){
   try{
     const img=new Image();img.src=p.url;await img.decode();
-    const preds=await mobilenetModel.classify(img);          // top-3
+    const preds=await mobilenetModel.classify(img);          // 取 top-3
     const labels=preds.slice(0,3).map(o=>o.className.split(',')[0]);
     console.log('► labels',labels);
     const g=await fetchSugar(labels);
-    p.state=(g!==null?'done':'fail');
-    if(g!==null)p.sugarPer100=g;
+    p.state = (g!==null?'done':'fail');
+    if(g!==null) p.sugarPer100 = g;
   }catch(e){console.warn(e);p.state='fail';}
   renderPhotos();refresh();
 }
 
-/* === 經 Worker 向 OpenFoodFacts 查詢 === */
+/* === 透過 Worker 查 OpenFoodFacts，依序嘗試多個關鍵字 === */
 async function fetchSugar(labelArr){
   for(const kw of labelArr){
     try{
       const api=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(kw)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
-      const r=await fetch(WORKER+'?url='+encodeURIComponent(api));
-      if(!r.ok) throw 'fetch err';
+      const r=await fetch(WORKER + '?url=' + encodeURIComponent(api));
+      if(!r.ok) throw 'worker fetch err';
       const js=await r.json();
-      const vals=js.products.filter(p=>p.nutriments?.sugars_100g>0).map(p=>p.nutriments.sugars_100g);
-      if(vals.length){const avg=+(vals.reduce((s,v)=>s+v,0)/vals.length).toFixed(1);console.log(`   ↳ ${kw} ${avg} g/100g`);return avg;}
+      const list=js.products.filter(p=>p.nutriments?.sugars_100g>0).map(p=>p.nutriments.sugars_100g);
+      if(list.length){
+        const avg=+(list.reduce((s,v)=>s+v,0)/list.length).toFixed(1);
+        console.log(`   ↳ ${kw} 平均 ${avg} g/100g`);
+        return avg;
+      }
     }catch(e){console.warn('fetchSugar',kw,e);}
   }
-  return null;
+  return null;            // 三個關鍵字都沒結果
 }
 
-/* ---------- 其餘程式碼（renderPhotos、camera、form submit 等）保持 v3.1 原狀 ---------- */
+/* === 以下其餘程式（拍照、縮圖 render、刪除、手動輸入、表單送出、列表、月曆、圖表…）
+       與 v3.1 一模一樣，請完整保留 === */
 </script>
 </body>
 </html>
