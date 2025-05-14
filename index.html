@@ -1,311 +1,106 @@
-<!DOCTYPE html>
-<!-- =========================================================
-  糖尿病健康管理  v1.3  (2024-06-14)
-  變更：
-    • 個資顯示切換改為「顯示個人資料」勾選
-    • 拍照 / 上傳多檔預覽，可移除
-    • 估計糖份 (mmol/L)
-    • 分析圖表按鈕保留
-    • 月曆檢視
-  ========================================================= -->
+<!doctype html>
 <html lang="zh-Hant">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>糖尿病健康管理</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<title>Camera All-in-One Tester</title>
 <style>
-:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
-*{box-sizing:border-box;margin:0}
-body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
-header{background:var(--c1);color:#fff;padding:1rem;text-align:center}
-nav{display:flex}
-nav button{flex:1;padding:.7rem;border:0;background:#eee;font-size:1rem}
-nav button.active{color:var(--c1);background:#fff;font-weight:700;border-bottom:3px solid var(--c1)}
-main{flex:1;width:95%;max-width:900px;margin:1rem auto}
-section{display:none}section.active{display:block}
-
-form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
-label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
-input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
-input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
-.inline{flex-direction:row;align-items:center;gap:.45rem}
-
-#photosWrap{display:flex;flex-wrap:wrap;gap:.45rem}
-.photo-thumb{width:80px;height:80px;object-fit:cover;border:1px solid #ccc;border-radius:var(--r);position:relative}
-.photo-thumb span{position:absolute;top:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
-
-#listTools{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
-#subTabs{display:flex;margin-bottom:1rem}
-#subTabs button{flex:1;padding:.55rem;background:#eee;border:0;border-radius:var(--r)}
-#subTabs button.active{background:var(--c1);color:#fff}
-#listBox .card{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 4px #0001;margin-bottom:.9rem}
-.card h4{margin-bottom:.4rem;color:var(--c1)}
-.attach{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
-.attach img{width:64px;height:64px;object-fit:cover;border-radius:var(--r);border:1px solid #ccc}
-.attach a{font-size:.8rem;border:1px solid #ccc;border-radius:var(--r);padding:4px 6px}
-
-.calendar{width:100%;border-collapse:collapse}
-.calendar th,.calendar td{border:1px solid #ddd;width:14.28%;height:90px;vertical-align:top;padding:2px;font-size:.75rem}
-.calendar th{background:#f0f0f0}
-
-.chartWrap{margin-top:1.5rem}
-canvas{max-width:100%}
+:root{--w:min(100vw,480px)}
+body{
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+               "Helvetica Neue",Arial,sans-serif;
+  margin:0;padding:1.2rem;display:flex;flex-direction:column;align-items:center}
+h1{font-size:1.25rem;margin:.2rem 0 .8rem}
+button{margin:.4rem 0;padding:.4rem 1.2rem;font-size:1rem}
+video,canvas,img{width:var(--w);max-width:100%;border:1px solid #666}
+#log{width:var(--w);max-width:100%;margin-top:.8rem;
+     font-size:.9rem;white-space:pre-wrap;background:#111;color:#0f0;padding:.6rem}
 </style>
-</head>
-<body>
-<header><h1>糖尿病健康管理</h1></header>
 
-<nav>
-  <button id="tabForm" class="active">新增紀錄</button>
-  <button id="tabList">紀&nbsp;錄</button>
-</nav>
+<h1>📷 Camera Tester</h1>
 
-<main>
-  <!-- ========== A. 新增紀錄 ========== -->
-  <section id="formSec" class="active">
-    <form id="recordForm">
-      <label class="inline">
-        <input type="checkbox" id="showInfo"> 顯示個人資料
-      </label>
+<button id="openBtn">🎥 開相機</button>
+<button id="shotBtn" style="display:none">📸 擷取</button>
+<button id="stopBtn" style="display:none">⏹️ 關閉</button><br>
 
-      <label>姓名
-        <input id="name" required>
-      </label>
+<video id="preview" playsinline muted></video>
+<canvas id="cvs" style="display:none"></canvas>
 
-      <label>年齡
-        <input id="age" type="number" min="1" max="120" required>
-      </label>
+<!-- 後備方案：在 getUserMedia 失敗時觸發 -->
+<input id="fileInput" type="file"
+       accept="image/jpeg"
+       capture="environment"
+       style="display:none">
 
-      <label>日期
-        <input id="date" type="date" required>
-      </label>
+<pre id="log">👉 按「開相機」開始測試…</pre>
 
-      <label>餐次
-        <select id="meal">
-          <option>早餐</option><option>午餐</option><option>晚餐</option>
-        </select>
-      </label>
-
-      <label>血糖 (mmol/L，可留空)
-        <input id="sugar" type="number" step="0.1" min="1">
-      </label>
-
-      <label>估計糖份 (mmol/L，可留空)
-        <input id="sugarEst" type="number" step="0.1" min="0">
-      </label>
-
-      <!-- 食物照片 -->
-      <label class="inline">拍照
-        <button id="captureBtn" type="button">📷 拍照</button>
-        <input id="captureIn" type="file" accept="image/*" capture="environment" style="display:none">
-      </label>
-
-      <label class="inline">上傳食物照片
-        <button id="uploadBtn" type="button">📑 選擇檔案</button>
-        <input id="uploadIn" type="file" accept="image/*" multiple style="display:none">
-      </label>
-
-      <div id="photosWrap"></div>
-
-      <button type="submit" style="background:var(--c1);color:#fff">儲存紀錄</button>
-    </form>
-  </section>
-
-  <!-- ========== B. 紀錄 ========= -->
-  <section id="listSec">
-    <div id="listTools">
-      <label style="display:flex;flex-direction:column;font-weight:600;font-size:.9rem">
-        月份
-        <input id="filterMonth" type="month">
-      </label>
-      <button id="toggleChart" style="background:#eee;border:1px solid #ccc;border-radius:var(--r);padding:.5rem .9rem">分析圖表</button>
-    </div>
-
-    <!-- 子分頁：列表 / 月曆 -->
-    <div id="subTabs">
-      <button id="subList" class="active">列表</button>
-      <button id="subCal">月曆</button>
-    </div>
-
-    <div id="listBox"></div>
-    <div id="calBox" style="display:none"></div>
-
-    <div class="chartWrap" style="display:none">
-      <canvas id="sugarChart"></canvas>
-    </div>
-  </section>
-</main>
-
-<!-- ============== JS ============== -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-/* ---------- 基本 DOM ---------- */
-const dateInput=document.getElementById('date');
-const showInfoChk=document.getElementById('showInfo');
-const captureBtn=document.getElementById('captureBtn');
-const uploadBtn=document.getElementById('uploadBtn');
-const capIn=document.getElementById('captureIn');
-const upIn=document.getElementById('uploadIn');
-const photosWrap=document.getElementById('photosWrap');
+/* ========= DOM 快捷 ============ */
+const $ = id => document.getElementById(id);
+const log = msg => $.log.textContent = msg;
 
-const tabForm=document.getElementById('tabForm');
-const tabList=document.getElementById('tabList');
-const formSec=document.getElementById('formSec');
-const listSec=document.getElementById('listSec');
+/* ========= 主要元素 ============ */
+const openBtn  = $('openBtn');
+const shotBtn  = $('shotBtn');
+const stopBtn  = $('stopBtn');
+const videoEl  = $('preview');
+const cvs      = $('cvs');
+const fileIn   = $('fileInput');
 
-const subListBtn=document.getElementById('subList');
-const subCalBtn=document.getElementById('subCal');
-const listBox=document.getElementById('listBox');
-const calBox=document.getElementById('calBox');
+let stream;     // MediaStream 供關閉用
 
-const filterMonth=document.getElementById('filterMonth');
-const toggleChartBtn=document.getElementById('toggleChart');
-const chartWrap=document.querySelector('.chartWrap');
+/* ========= 開相機（優先 getUserMedia） ============ */
+openBtn.onclick = async () => {
+  // 必須 HTTPS 或 localhost
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+    log('🚫 需在 HTTPS 執行，否則無法使用相機！');
+    return;
+  }
 
-let photos=[];              // 每筆暫存食物相片 {url, fileName}
-let records=[];             // 所有紀錄
-let chart,chartVisible=false;
-
-/* ---------- 今日日期 ---------- */
-dateInput.value=new Date().toISOString().split('T')[0];
-
-/* ---------- 分頁 ---------- */
-tabForm.onclick=()=>toggleTab(true);
-tabList.onclick=()=>toggleTab(false);
-function toggleTab(f){tabForm.classList.toggle('active',f);tabList.classList.toggle('active',!f);
-formSec.classList.toggle('active',f);listSec.classList.toggle('active',!f);if(!f) refresh();}
-subListBtn.onclick=()=>toggleSub(true);
-subCalBtn.onclick=()=>toggleSub(false);
-function toggleSub(listOn){subListBtn.classList.toggle('active',listOn);subCalBtn.classList.toggle('active',!listOn);
-listBox.style.display=listOn?'block':'none';calBox.style.display=listOn?'none':'block';}
-
-/* ---------- 相片取得 ---------- */
-captureBtn.onclick=()=>capIn.click();
-uploadBtn.onclick=()=>upIn.click();
-capIn.onchange=e=>handleFiles(e.target.files,true);
-upIn.onchange=e=>handleFiles(e.target.files,false);
-
-function handleFiles(files,replace){
-  if(replace) photos=[];        // 拍照視為重拍
-  [...files].forEach(f=>{
-    const url=URL.createObjectURL(f);
-    photos.push({url,name:f.name});
-  });
-  renderPhotos();
-}
-function renderPhotos(){
-  photosWrap.innerHTML='';
-  photos.forEach((p,i)=>{
-    const div=document.createElement('div');
-    div.className='photo-thumb';
-    div.innerHTML=`<img src="${p.url}" class="photo-thumb"><span data-i="${i}">✖</span>`;
-    photosWrap.appendChild(div);
-  });
-}
-photosWrap.onclick=e=>{
-  if(e.target.tagName==='SPAN'){
-    const idx=+e.target.dataset.i;
-    photos.splice(idx,1);renderPhotos();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia(
+              { video: { facingMode: { exact:'environment' } } });
+    videoEl.srcObject = stream;
+    await videoEl.play();
+    shotBtn.style.display = stopBtn.style.display = 'inline-block';
+    log('✅ getUserMedia 成功，鏡頭已開啟');
+  } catch (err) {
+    log('⚠️ getUserMedia 失敗：' + err.name +
+        '\n→ 改用 <input capture> 後備方案');
+    // 退回 input capture
+    fileIn.click();
   }
 };
 
-/* ---------- 儲存紀錄 ---------- */
-document.getElementById('recordForm').onsubmit=e=>{
-  e.preventDefault();
-  const rec={
-    name:document.getElementById('name').value.trim(),
-    age:+document.getElementById('age').value,
-    date:dateInput.value,
-    meal:document.getElementById('meal').value,
-    sugar:document.getElementById('sugar').value?+document.getElementById('sugar').value:null,
-    sugarEst:document.getElementById('sugarEst').value?+document.getElementById('sugarEst').value:null,
-    show:showInfoChk.checked,
-    photos:[...photos]          // 複製
-  };
-  records.push(rec);
-  e.target.reset();photos=[];renderPhotos();
-  dateInput.value=new Date().toISOString().split('T')[0];
-  alert('已儲存！');
+/* ========= 擷取一張照片 ============ */
+shotBtn.onclick = () => {
+  const { videoWidth: w, videoHeight: h } = videoEl;
+  if (!w) { log('⚠️ video 未就緒'); return; }
+  cvs.width = w; cvs.height = h;
+  cvs.getContext('2d').drawImage(videoEl, 0, 0, w, h);
+  cvs.toBlob(blob => {
+    const kb = (blob.size / 1024).toFixed(1);
+    log(`📎 擷取完成：${kb} KB\n（此處可上傳 blob 或做預覽）`);
+  }, 'image/jpeg', 0.92);
 };
 
-/* ---------- 工具列 ---------- */
-filterMonth.onchange=refresh;
-toggleChartBtn.onclick=()=>{chartVisible=!chartVisible;toggleChartBtn.textContent=chartVisible?'隱藏圖表':'分析圖表';refresh();};
+/* ========= 關閉相機 ============ */
+stopBtn.onclick = () => {
+  stream?.getTracks().forEach(t => t.stop());
+  videoEl.srcObject = null;
+  shotBtn.style.display = stopBtn.style.display = 'none';
+  log('⏹️ 相機已關閉');
+};
 
-/* ---------- 重繪列表 / 月曆 / 圖表 ---------- */
-function refresh(){
-  buildList();
-  buildCalendar();
-  buildChart();
-}
-
-/* ---- 列表 ---- */
-function buildList(){
-  listBox.innerHTML='';
-  const ym=filterMonth.value; // yyyy-MM
-  records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
-    const card=document.createElement('div');card.className='card';
-    const name=r.show?r.name:'****';
-    const age =r.show?r.age :'**';
-    card.innerHTML=`
-      <h4>${r.date}（${r.meal}）</h4>
-      <p>姓名：${name}　年齡：${age}</p>
-      ${r.sugar?`<p>血糖：<strong>${r.sugar}</strong> mmol/L</p>`:'<p>未量血糖</p>'}
-      ${r.sugarEst?`<p>估計糖份：${r.sugarEst} mmol/L</p>`:''}
-    `;
-    const att=document.createElement('div');att.className='attach';
-    r.photos.forEach(p=>{
-      const a=document.createElement('a');a.href=p.url;a.target='_blank';
-      a.innerHTML=`<img src="${p.url}" alt="">`;att.appendChild(a);
-    });
-    if(att.childElementCount)card.appendChild(att);
-    listBox.appendChild(card);
-  });
-}
-
-/* ---- 月曆 ---- */
-function buildCalendar(){
-  const ym=filterMonth.value || new Date().toISOString().slice(0,7);
-  const [y,m]=ym.split('-').map(Number);
-  const first=new Date(y,m-1,1);
-  const last=new Date(y,m,0).getDate();
-  let html='<table class="calendar"><thead><tr>';
-  '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
-  for(let i=0;i<first.getDay();i++)html+='<td></td>';
-  for(let d=1;d<=last;d++){
-    const dateStr=`${ym}-${String(d).padStart(2,'0')}`;
-    const dayRecs=records.filter(r=>r.date===dateStr);
-    const avg=dayRecs.filter(r=>r.sugar).reduce((s,v)=>s+v.sugar,0)/ (dayRecs.filter(r=>r.sugar).length||1);
-    html+=`<td><strong>${d}</strong><br>${dayRecs.length?`筆數:${dayRecs.length}<br>Avg:${avg?avg.toFixed(1):'-'}`:''}</td>`;
-    if((first.getDay()+d)%7===0&&d!==last)html+='</tr><tr>';
+/* ========= <input capture> 回傳檔案 ============ */
+fileIn.onchange = e => {
+  const f = e.target.files[0];
+  if (f) {
+    log('✅ 由 <input> 取得：' + f.name +
+        '\n檔案大小：' + (f.size/1024).toFixed(1) + ' KB');
+  } else {
+    log('🚫 未選擇任何檔案');
   }
-  const remain=(first.getDay()+last)%7;
-  if(remain)for(let i=0;i<7-remain;i++)html+='<td></td>';
-  html+='</tr></tbody></table>';
-  calBox.innerHTML=html;
-}
-
-/* ---- 圖表 ---- */
-function buildChart(){
-  if(!chartVisible){chartWrap.style.display='none';return;}
-  const ym=filterMonth.value;
-  const rows=records.filter(r=>(!ym||r.date.startsWith(ym))&&r.sugar);
-  if(!rows.length){chartWrap.style.display='none';return;}
-  const labels=rows.map(r=>r.date+' '+r.meal);
-  const data=rows.map(r=>r.sugar);
-  chartWrap.style.display='block';
-  if(chart)chart.destroy();
-  chart=new Chart(document.getElementById('sugarChart'),{
-    type:'line',
-    data:{labels,datasets:[{label:'血糖 (mmol/L)',data,
-      borderColor:getCss('--c2'),backgroundColor:getCss('--c2','33'),
-      tension:.25,pointRadius:4,pointBackgroundColor:getCss('--c2')}]},
-    options:{scales:{y:{beginAtZero:false}}}
-  });
-}
-
-/* ---- CSS 變數取色 ---- */
-function getCss(n,a){const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return a?v+a:v;}
+};
 </script>
-</body>
 </html>
