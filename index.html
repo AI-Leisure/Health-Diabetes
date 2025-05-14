@@ -238,6 +238,50 @@ const today=()=>new Date().toISOString().split('T')[0];
 let model,photos=[],records=[],chart,chartShown=false;
 let currentEditingPhotoIndex = -1;
 
+// 常見食物的糖分估算 (作為後備)
+const commonFoodSugar = {
+  "rice": 0.3, // 米飯約含0.3g糖/100g
+  "noodle": 0.6, // 麵食約含0.6g糖/100g
+  "potato": 1.2, // 馬鈴薯約含1.2g糖/100g
+  "sweet potato": 4.2, // 番薯約含4.2g糖/100g
+  "bread": 5.0, // 麵包約含5g糖/100g
+  "apple": 10.4, // 蘋果約含10.4g糖/100g
+  "banana": 12.2, // 香蕉約含12.2g糖/100g
+  "orange": 9.4, // 橙子約含9.4g糖/100g
+  "grape": 16.0, // 葡萄約含16g糖/100g
+  "watermelon": 6.2, // 西瓜約含6.2g糖/100g
+  "milk": 4.8, // 牛奶約含4.8g糖/100g
+  "yogurt": 4.7, // 優格約含4.7g糖/100g
+  "ice cream": 21.0, // 冰淇淋約含21g糖/100g
+  "chocolate": 48.0, // 巧克力約含48g糖/100g
+  "cake": 30.0, // 蛋糕約含30g糖/100g
+  "cookie": 35.0, // 餅乾約含35g糖/100g
+  "soda": 10.6, // 汽水約含10.6g糖/100ml
+  "juice": 9.8, // 果汁約含9.8g糖/100ml
+  "coffee": 0.0, // 純咖啡不含糖
+  "tea": 0.0, // 純茶不含糖
+  "beer": 0.3, // 啤酒約含0.3g糖/100ml
+  "wine": 0.6, // 葡萄酒約含0.6g糖/100ml
+  "egg": 0.4, // 雞蛋約含0.4g糖/100g
+  "chicken": 0.0, // 雞肉基本不含糖
+  "beef": 0.0, // 牛肉基本不含糖
+  "pork": 0.0, // 豬肉基本不含糖
+  "fish": 0.0, // 魚基本不含糖
+  "shrimp": 0.0, // 蝦基本不含糖
+  "vegetable": 2.0, // 蔬菜平均約含2g糖/100g
+  "salad": 2.5, // 沙拉約含2.5g糖/100g
+  "fruit": 10.0, // 水果平均約含10g糖/100g
+  "cereal": 7.0, // 麥片約含7g糖/100g
+  "oatmeal": 0.9, // 燕麥約含0.9g糖/100g
+  "cream": 3.3, // 奶油約含3.3g糖/100g
+  "honey": 82.0, // 蜂蜜約含82g糖/100g
+  "jam": 65.0, // 果醬約含65g糖/100g
+  "maple syrup": 67.0, // 楓糖漿約含67g糖/100g
+  "candy": 80.0, // 糖果約含80g糖/100g
+  "dumpling": 2.0, // 餃子約含2g糖/100g
+  "tofu": 0.7, // 豆腐約含0.7g糖/100g
+};
+
 // 日誌函數
 function log(msg) {
   console.log(msg);
@@ -272,19 +316,18 @@ window.addEventListener('DOMContentLoaded',async()=>{
     console.error('加載記錄時出錯', e);
   }
   
-  // 初始化模態框關閉按鈕
+  // 初始化模態框
+  const modal = $('editModal');
   document.querySelector('.close').onclick = function() {
-    $('editModal').style.display = 'none';
+    modal.style.display = 'none';
   };
   
-  // 點擊模態框外部關閉
   window.onclick = function(event) {
-    if (event.target == $('editModal')) {
-      $('editModal').style.display = 'none';
+    if (event.target == modal) {
+      modal.style.display = 'none';
     }
   };
   
-  // 保存按鈕事件
   $('saveSugarBtn').onclick = function() {
     if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
       const value = parseFloat($('editSugarValue').value);
@@ -295,7 +338,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
         renderPhotos();
       }
     }
-    $('editModal').style.display = 'none';
+    modal.style.display = 'none';
   };
   
   try {
@@ -382,8 +425,9 @@ async function addFiles(fs){
 /* ---------- AI + 糖份 ---------------------------------- */
 async function predict(p, index){
   try{
-    const img=new Image();
-    img.src=p.url;
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = p.url;
     await img.decode();
     
     log('正在分析食物...');
@@ -391,20 +435,47 @@ async function predict(p, index){
     
     if (predictions && predictions.length > 0) {
       const [pred] = predictions;
-      const label = pred.className.split(',')[0];
-      log(`識別為: ${label}，正在查詢糖分...`);
+      const label = pred.className.split(',')[0].toLowerCase();
+      log(`識別為: ${label}`);
       
       p.label = label;
       p.confidence = pred.probability;
       
-      const sugar = await querySugar(label);
-      p.sugar = sugar;
-      p.state = sugar !== null ? 'done' : 'fail';
+      // 首先，查找是否有本地預設糖分數據
+      const localSugar = getLocalSugarEstimate(label);
+      if (localSugar !== null) {
+        p.sugar = localSugar;
+        p.state = 'done';
+        p.source = 'local';
+        log(`${label}: 約含 ${localSugar}g 糖分/100g (本地數據)"`);
+        renderPhotos();
+        return;
+      }
       
-      if (sugar === null) {
-        log(`無法獲取 ${label} 的糖分信息`);
-      } else {
-        log(`${label}: 約含 ${sugar}g 糖分/100g`);
+      // 嘗試從API獲取糖分數據
+      try {
+        const apiSugar = await querySugar(label);
+        if (apiSugar !== null) {
+          p.sugar = apiSugar;
+          p.state = 'done';
+          p.source = 'api';
+          log(`${label}: 約含 ${apiSugar}g 糖分/100g (API數據)`);
+        } else {
+          // API失敗，使用本地估算
+          const estimatedSugar = estimateSugar(label);
+          p.sugar = estimatedSugar;
+          p.state = 'done';
+          p.source = 'estimated';
+          log(`${label}: 約含 ${estimatedSugar}g 糖分/100g (估算數據)`);
+        }
+      } catch (apiError) {
+        console.error('API請求失敗:', apiError);
+        // API出錯，使用本地估算
+        const estimatedSugar = estimateSugar(label);
+        p.sugar = estimatedSugar;
+        p.state = 'done';
+        p.source = 'estimated';
+        log(`${label}: 約含 ${estimatedSugar}g 糖分/100g (估算數據)`);
       }
     } else {
       p.state = 'fail';
@@ -419,11 +490,103 @@ async function predict(p, index){
   renderPhotos();
 }
 
+// 從常見食物庫中查找糖分
+function getLocalSugarEstimate(label) {
+  // 首先嘗試精確匹配
+  if (commonFoodSugar[label] !== undefined) {
+    return commonFoodSugar[label];
+  }
+  
+  // 如果沒有精確匹配，嘗試部分匹配
+  for (const key of Object.keys(commonFoodSugar)) {
+    if (label.includes(key) || key.includes(label)) {
+      return commonFoodSugar[key];
+    }
+  }
+  
+  return null;
+}
+
+// 基於AI識別結果估算糖分
+function estimateSugar(label) {
+  // 先嘗試找到最相近的食物
+  let bestMatch = null;
+  let highestSimilarity = 0;
+  
+  for (const key of Object.keys(commonFoodSugar)) {
+    // 計算相似度 (簡單的包含匹配)
+    let similarity = 0;
+    const words1 = label.toLowerCase().split(' ');
+    const words2 = key.toLowerCase().split(' ');
+    
+    // 檢查有多少單詞重疊
+    for (const word1 of words1) {
+      if (word1.length < 3) continue; // 忽略太短的詞
+      for (const word2 of words2) {
+        if (word2.length < 3) continue;
+        if (word1.includes(word2) || word2.includes(word1)) {
+          similarity += 1;
+        }
+      }
+    }
+    
+    if (similarity > highestSimilarity) {
+      highestSimilarity = similarity;
+      bestMatch = key;
+    }
+  }
+  
+  // 如果找到相似的食物，返回其糖分值
+  if (bestMatch && highestSimilarity > 0) {
+    return commonFoodSugar[bestMatch];
+  }
+  
+  // 如果沒有找到相似的食物，根據常見類別估計
+  if (label.includes('fruit') || 
+      label.includes('apple') || 
+      label.includes('banana') || 
+      label.includes('berry')) {
+    return 10.0; // 水果平均糖分
+  }
+  if (label.includes('vegetable') || 
+      label.includes('salad') || 
+      label.includes('broccoli')) {
+    return 2.0; // 蔬菜平均糖分
+  }
+  if (label.includes('cake') || 
+      label.includes('sweet') || 
+      label.includes('dessert') || 
+      label.includes('candy')) {
+    return 30.0; // 甜點平均糖分
+  }
+  if (label.includes('bread') || 
+      label.includes('bagel') || 
+      label.includes('sandwich')) {
+    return 5.0; // 麵包類平均糖分
+  }
+  if (label.includes('meat') || 
+      label.includes('chicken') || 
+      label.includes('beef') || 
+      label.includes('pork')) {
+    return 0.0; // 肉類基本不含糖
+  }
+  if (label.includes('rice') || 
+      label.includes('noodle') || 
+      label.includes('pasta')) {
+    return 0.5; // 主食類平均糖分
+  }
+  
+  // 默認返回中等糖分值
+  return 5.0;
+}
+
 async function querySugar(label){
   try {
-    log(`正在從食品資料庫查詢: ${label}`);
-    const targetUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(label)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
-    const proxyUrl = `${WORKER}/${targetUrl}`;
+    log(`正在查詢: ${label}`);
+    
+    // 使用代理服務直接查詢
+    const encodedLabel = encodeURIComponent(label);
+    const proxyUrl = `${WORKER}/https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodedLabel}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
     
     console.log("發送代理請求:", proxyUrl);
     
@@ -431,49 +594,54 @@ async function querySugar(label){
     
     if (!response.ok) {
       console.error(`代理請求失敗: ${response.status} ${response.statusText}`);
-      log(`API請求失敗: ${response.status}`);
       return null;
     }
     
-    const data = await response.json();
-    console.log("API響應:", data);
+    const text = await response.text();
     
-    if (!data.products || !Array.isArray(data.products)) {
-      console.error("API響應格式錯誤:", data);
-      log("API響應格式錯誤");
-      return null;
-    }
-    
-    // 嘗試使用更寬鬆的篩選條件
-    const validProducts = data.products.filter(p => {
-      return p.nutriments && (
-        p.nutriments.sugars_100g > 0 || 
-        p.nutriments.carbohydrates_100g > 0
-      );
-    });
-    
-    if (validProducts.length === 0) {
-      console.log("未找到含糖分信息的產品");
-      return null;
-    }
-    
-    // 優先使用sugars_100g，如果沒有則使用carbohydrates_100g的30%作為估算值
-    const sugarValues = validProducts.map(p => {
-      if (p.nutriments.sugars_100g > 0) {
-        return p.nutriments.sugars_100g;
-      } else if (p.nutriments.carbohydrates_100g > 0) {
-        return p.nutriments.carbohydrates_100g * 0.3; // 估算值
+    try {
+      const data = JSON.parse(text);
+      console.log("API響應:", data);
+      
+      if (!data.products || !Array.isArray(data.products) || data.products.length === 0) {
+        console.warn("API沒有返回任何產品:");
+        return null;
       }
-      return 0;
-    });
-    
-    const avgSugar = +(sugarValues.reduce((sum, val) => sum + val, 0) / sugarValues.length).toFixed(1);
-    console.log(`找到 ${validProducts.length} 個產品，平均糖分: ${avgSugar}g/100g`);
-    
-    return avgSugar;
+      
+      // 嘗試找出糖分信息
+      const validProducts = data.products.filter(p => {
+        return p.nutriments && (
+          p.nutriments.sugars_100g > 0 || 
+          p.nutriments.carbohydrates_100g > 0
+        );
+      });
+      
+      if (validProducts.length === 0) {
+        console.log("未找到含糖分信息的產品");
+        return null;
+      }
+      
+      // 優先使用sugars_100g，如果沒有則使用carbohydrates_100g的30%作為估算值
+      const sugarValues = validProducts.map(p => {
+        if (p.nutriments.sugars_100g > 0) {
+          return p.nutriments.sugars_100g;
+        } else if (p.nutriments.carbohydrates_100g > 0) {
+          return p.nutriments.carbohydrates_100g * 0.3; // 估算值
+        }
+        return 0;
+      });
+      
+      const avgSugar = +(sugarValues.reduce((sum, val) => sum + val, 0) / sugarValues.length).toFixed(1);
+      console.log(`找到 ${validProducts.length} 個產品，平均糖分: ${avgSugar}g/100g`);
+      
+      return avgSugar;
+    } catch (e) {
+      console.error("解析API響應失敗:", e);
+      console.log("原始響應文本:", text);
+      return null;
+    }
   } catch(e) {
     console.error('查詢糖分失敗', e);
-    log('查詢糖分時發生錯誤');
     return null;
   }
 }
@@ -531,13 +699,14 @@ $('form').onsubmit=e=>{
   localStorage.dm_name=$('name').value.trim();
   localStorage.dm_age=$('age').value.trim();
   
-  // 準備儲存圖片的Base64數據
+  // 準備儲存圖片的數據
   const photoData = photos.map(p => ({
     url: p.url,
     state: p.state,
     sugar: p.sugar,
     label: p.label || '',
-    manual: p.manual || false
+    manual: p.manual || false,
+    source: p.source || 'unknown'
   }));
   
   // 創建新紀錄
@@ -610,7 +779,7 @@ function buildList(){
       ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
       ${r.photos && r.photos.length ? `<div class="attach">
         ${r.photos.map(p => `<figure><img src="${p.url}" alt="食物照片">
-          <figcaption>${p.label ? `${p.label.slice(0, 10)}${p.label.length > 10 ? '...' : ''}<br>` : ''}${p.sugar ? p.sugar + ' g' : '未知'}</figcaption></figure>`).join('')}
+          <figcaption>${p.label ? `${p.label.slice(0, 10)}${p.label.length > 10 ? '...' : ''}<br>` : ''}${p.sugar ? p.sugar + ' g' : '?g'}</figcaption></figure>`).join('')}
       </div>` : ''}
     </div>`).join('');
 }
