@@ -345,4 +345,42 @@ function buildCalendar(){
   let html='<table class="calendar"><thead><tr>';
   '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
   for(let i=0;i<first.getDay();i++)html+='<td></td>';
-  for(let d=
+  for(let d=1;d<=total;d++){
+    const ds=`${ym}-${String(d).padStart(2,'0')}`;const rows=records.filter(r=>r.date===ds);
+    const sugars=rows.flatMap(r=>r.photos.map(p=>p.sugarPer100).filter(x=>x!==null));
+    const avg=sugars.reduce((s,v)=>s+v,0)/(sugars.length||1);
+    html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>Avg:${avg?avg.toFixed(1)+'g':''}`:''}</td>`;
+    if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
+  }
+  const rest=(first.getDay()+total)%7;if(rest)html+=`<td colspan="${7-rest}"></td>`;
+  html+='</tr></tbody></table>';$('calBox').innerHTML=html;
+}
+
+/* ========= 圖表 ========= */
+$('toggleChart').onclick=()=>{
+  if(!chartVisible && records.every(r=>!r.sugarMg)){alert('目前沒有血糖數據');return;}
+  chartVisible=!chartVisible;
+  $('toggleChart').textContent=chartVisible?'隱藏圖表':'分析圖表';
+  buildChart();
+};
+function buildChart(){
+  if(!chartVisible){$('chartWrap').style.display='none';return;}
+  const rows=records.filter(r=>(!$('filterMonth').value||r.date.startsWith($('filterMonth').value))&&r.sugarMg);
+  if(!rows.length){$('chartWrap').style.display='none';alert('該月份沒有血糖數據');chartVisible=false;$('toggleChart').textContent='分析圖表';return;}
+  $('chartWrap').style.display='block';
+  chart?.destroy();
+  chart=new Chart($('sugarChart'),{
+    type:'line',
+    data:{labels:rows.map(r=>r.date+' '+r.meal),
+          datasets:[{label:'血糖 (mg/dL)',data:rows.map(r=>r.sugarMg),
+            borderColor:'#d32f2f',backgroundColor:'#d32f2f33',
+            tension:.25,pointRadius:4,pointBackgroundColor:'#d32f2f'}]},
+    options:{maintainAspectRatio:false,scales:{y:{beginAtZero:false}}}
+  });
+}
+
+/* ========= refresh ========= */
+function refresh(){buildList();buildCalendar();if(chartVisible)buildChart();}
+</script>
+</body>
+</html>
