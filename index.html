@@ -372,11 +372,11 @@ canvas{max-width:100%;height:240px!important}
         <optgroup label="主食/穀物類">
           <option value="rice">白飯 (0.3g)</option>
           <option value="brown rice">糙米飯 (0.7g)</option>
+          <option value="corn">玉米 (6.0g)</option>
           <option value="noodles">麵條 (0.6g)</option>
           <option value="bread">麵包 (5.0g)</option>
           <option value="potato">馬鈴薯 (1.2g)</option>
           <option value="sweet potato">番薯 (4.2g)</option>
-          <option value="corn">玉米 (6.0g)</option>
         </optgroup>
         <optgroup label="肉類/蛋白質">
           <option value="chicken">雞肉 (0.0g)</option>
@@ -485,13 +485,14 @@ canvas{max-width:100%;height:240px!important}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
 
 <script>
 /* 全局變量 */
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
+
+// Worker 端點 - 新增
+const WORKER_ENDPOINT = 'https://off-proxy.leisure9654.workers.dev/identify-food';
 
 let photos=[];
 let records=[];
@@ -500,12 +501,6 @@ let chartShown=false;
 let currentEditingPhotoIndex = -1;
 let currentDeletingRecordId = null;
 let currentPreviewImg = null;
-let mobileNetModel = null;
-let isModelLoading = false;
-
-// 圖像識別配置
-const IMAGE_SIZE = 224; // MobileNet 模型輸入尺寸
-const TOPK_PREDICTIONS = 3; // 返回可能性最高的前K個預測
 
 // 常見食物的糖分數據庫 - 中英文對照
 const sugarValues = {
@@ -569,84 +564,6 @@ const sugarValues = {
   "non-food": {name: "非食物", sugar: 0.0}
 };
 
-// 食物類別標籤映射 (將英文標籤映射到我們的食物類別)
-const foodMapping = {
-  // 米飯和穀物類
-  "rice": "rice",
-  "brown rice": "brown rice",
-  "oat": "oatmeal",
-  "grain": "rice",
-  "cereal": "rice",
-  "noodle": "noodles",
-  "pasta": "pasta",
-  "bread": "bread",
-  "corn": "corn",
-  "potato": "potato",
-  "sweet potato": "sweet potato",
-  
-  // 肉類
-  "chicken": "chicken",
-  "beef": "beef",
-  "pork": "pork",
-  "meat": "beef",
-  "fish": "fish",
-  "seafood": "fish",
-  "egg": "egg",
-  "tofu": "tofu",
-  
-  // 蔬菜類
-  "vegetable": "vegetable",
-  "salad": "salad",
-  "carrot": "carrot",
-  "tomato": "tomato",
-  "broccoli": "broccoli",
-  "lettuce": "vegetable",
-  "spinach": "vegetable",
-  "cabbage": "vegetable",
-  
-  // 水果類
-  "fruit": "fruit",
-  "apple": "apple",
-  "banana": "banana",
-  "orange": "orange",
-  "grape": "grape",
-  "watermelon": "watermelon",
-  "strawberry": "fruit",
-  "berry": "fruit",
-  
-  // 乳製品
-  "milk": "milk",
-  "yogurt": "yogurt",
-  "cheese": "cheese",
-  "ice cream": "ice cream",
-  "dairy": "milk",
-  
-  // 甜點與零食
-  "chocolate": "chocolate",
-  "cake": "cake",
-  "cookie": "cookie",
-  "candy": "candy",
-  "honey": "honey",
-  "sweet": "cake",
-  "dessert": "cake",
-  
-  // 飲料
-  "soda": "soda",
-  "soft drink": "soda",
-  "juice": "juice",
-  "coffee": "coffee",
-  "tea": "tea",
-  "beverage": "juice",
-  "water": "water"
-};
-
-// 非食物類別 (當識別到這些類別時，標記為非食物)
-const nonFoodCategories = [
-  "person", "human", "people", "furniture", "device", "electronic", "phone", 
-  "computer", "car", "vehicle", "toy", "building", "house", "clothing", "accessory",
-  "tool", "book", "paper", "document", "landscape", "scenery", "animal", "pet"
-];
-
 // 計算糖分總和
 function calculateSugarSum(photoArray) {
   if (!photoArray || photoArray.length === 0) return 0;
@@ -665,22 +582,23 @@ function updateStatus(msg) {
   $('statusMsg').textContent = msg;
 }
 
-// 更新AI進度條
-function updateAIProgress(progress) {
-  if (progress === 0) {
-    $('aiProgress').style.display = 'none';
-    $('aiProgressBar').style.width = '0%';
+// 更新進度條 - 新增
+function updateAIProgress(percent) {
+  const progressBar = $('aiProgressBar');
+  const progressContainer = $('aiProgress');
+  
+  if (percent <= 0) {
+    progressContainer.style.display = 'none';
     return;
   }
   
-  $('aiProgress').style.display = 'block';
-  $('aiProgressBar').style.width = `${Math.min(100, progress)}%`;
+  progressContainer.style.display = 'block';
+  progressBar.style.width = percent + '%';
   
-  if (progress >= 100) {
+  if (percent >= 100) {
     setTimeout(() => {
-      $('aiProgress').style.display = 'none';
-      $('aiProgressBar').style.width = '0%';
-    }, 500);
+      progressContainer.style.display = 'none';
+    }, 1000);
   }
 }
 
@@ -694,7 +612,7 @@ function updateSugarSum() {
 }
 
 /* ---------- 初始化 -------------------------------------- */
-window.addEventListener('DOMContentLoaded', async function() {
+window.addEventListener('DOMContentLoaded', function() {
   // 設置默認日期為今天
   $('date').value = today();
   
@@ -714,47 +632,26 @@ window.addEventListener('DOMContentLoaded', async function() {
   // 初始化表單狀態
   toggleInfo();
   
-  // 加載AI模型（非阻塞方式）
-  loadMobileNetModel();
-  
   // 渲染用户界面
   render();
+  
+  // 測試 Worker 連接 - 新增
+  testWorkerConnection();
 });
 
-// 非阻塞加載MobileNet模型
-async function loadMobileNetModel() {
-  if (mobileNetModel || isModelLoading) return;
-  
-  try {
-    isModelLoading = true;
-    updateStatus('正在加載AI模型...');
-    updateAIProgress(10);
-    
-    // 確認TensorFlow.js和MobileNet是否可用
-    if (typeof tf === 'undefined' || typeof mobilenet === 'undefined') {
-      throw new Error('AI庫未加載，將使用手動選擇');
-    }
-    
-    // 在後台加載模型
-    setTimeout(async () => {
-      try {
-        updateAIProgress(30);
-        mobileNetModel = await mobilenet.load();
-        updateAIProgress(100);
-        updateStatus('AI模型加載完成，可以上傳照片');
-        console.log('MobileNet模型加載成功');
-        isModelLoading = false;
-      } catch (err) {
-        console.error('模型加載失敗', err);
-        updateStatus('AI模型加載失敗，將使用手動選擇');
-        isModelLoading = false;
-      }
-    }, 100);
-  } catch (e) {
-    console.error('初始化模型失敗', e);
-    updateStatus('AI初始化失敗，將使用手動選擇');
-    isModelLoading = false;
-  }
+// 測試 Worker 連接 - 新增
+function testWorkerConnection() {
+  fetch('https://off-proxy.leisure9654.workers.dev/health')
+    .then(response => {
+      if (!response.ok) throw new Error('Worker 連接失敗');
+      return response.json();
+    })
+    .then(data => {
+      console.log('Worker 連接成功:', data);
+    })
+    .catch(error => {
+      console.error('無法連接到 Worker:', error);
+    });
 }
 
 // 加載保存的記錄
@@ -968,7 +865,7 @@ function toggleChart() {
 }
 
 /* ---------- 照片處理 ---------------------------------- */
-// 添加照片文件
+// 添加照片文件 - 已修改為使用 Worker
 async function addFiles(fs) {
   if (!fs || !fs.length) return;
   
@@ -991,8 +888,8 @@ async function addFiles(fs) {
       photos.push(photo);
       renderPhotos();
       
-      // 使用AI自動識別照片
-      identifyFoodInImage(photo, photos.length - 1);
+      // 使用 Worker 識別照片
+      identifyFoodWithWorker(photo, photos.length - 1);
     } catch (e) {
       console.error('處理圖片時出錯', e);
       updateStatus('處理圖片出錯: ' + e.message);
@@ -1000,24 +897,110 @@ async function addFiles(fs) {
   }
 }
 
-// 使用MobileNet識別照片中的食物
-async function identifyFoodInImage(photo, index) {
+// 使用 Worker 識別食物 - 新函數
+async function identifyFoodWithWorker(photo, index) {
   updateStatus('正在分析照片...');
+  updateAIProgress(10);
   
-  // 如果AI模型尚未加載，使用手動選擇
-  if (!mobileNetModel) {
-    // 允許用戶手動選擇食物類型
-    photo.state = 'done';
-    photo.label = 'rice'; // 預設值
-    photo.sugar = sugarValues['rice'].sugar;
-    photo.source = 'manual';
-    renderPhotos();
-    updateSugarSum();
+  try {
+    // 從 URL 獲取 Blob 數據
+    const response = await fetch(photo.url);
+    const blob = await response.blob();
     
-    // 彈出編輯窗口讓用戶選擇正確的食物類型
-    openEditModal(index);
-    return;
+    // 準備表單數據
+    const formData = new FormData();
+    formData.append('image', blob, 'food_image.jpg');
+    
+    updateAIProgress(30);
+    
+    // 發送到 Worker 進行識別
+    console.log('發送圖像到 Worker 進行識別...');
+    const workerResponse = await fetch(WORKER_ENDPOINT, {
+      method: 'POST',
+      body: formData
+    });
+    
+    updateAIProgress(60);
+    
+    if (!workerResponse.ok) {
+      throw new Error('Worker API 請求失敗: ' + workerResponse.status);
+    }
+    
+    // 解析結果
+    const result = await workerResponse.json();
+    console.log('Worker 回傳結果:', result);
+    
+    updateAIProgress(80);
+    
+    if (!result.success || result.error) {
+      throw new Error(result.error || '識別失敗');
+    }
+    
+    // 處理識別結果
+    if (result.predictions && result.predictions.length > 0) {
+      // 獲取最可能的食物類型
+      const topPrediction = result.predictions[0];
+      
+      // 確認是否為食物
+      if (topPrediction.label === 'non-food') {
+        photo.label = 'non-food';
+        photo.sugar = 0;
+      } else {
+        // 映射到我們的食物類別
+        let foodType = topPrediction.label;
+        
+        // 確保結果是我們支持的食物類型
+        if (!sugarValues[foodType]) {
+          foodType = 'rice'; // 默認值
+        }
+        
+        photo.label = foodType;
+        photo.sugar = sugarValues[foodType].sugar;
+      }
+      
+      photo.state = 'done';
+      photo.source = 'cloudflare-worker';
+      photo.predictions = result.predictions;
+      photo.dominantColor = result.dominantColor;
+      
+      renderPhotos();
+      updateSugarSum();
+      updateAIProgress(100);
+      
+      // 提示用戶識別結果
+      const displayName = photo.label === 'non-food' ? '非食物' : 
+                         (sugarValues[photo.label]?.name || photo.label);
+      updateStatus(`已識別為 ${displayName}，點擊照片可編輯`);
+    } else {
+      throw new Error('無有效的識別結果');
+    }
+  } catch (e) {
+    console.error('Worker 識別失敗', e);
+    updateAIProgress(85);
+    
+    // 失敗時使用本地識別方法作為備份
+    try {
+      await identifyFoodInImage(photo, index);
+    } catch (err) {
+      console.error('本地識別也失敗', err);
+      // 兩種方式都失敗，設置默認值
+      photo.state = 'done';
+      photo.label = 'rice'; // 預設值
+      photo.sugar = sugarValues['rice'].sugar;
+      photo.source = 'fallback';
+      renderPhotos();
+      updateSugarSum();
+      
+      // 彈出編輯窗口讓用戶選擇正確的食物類型
+      openEditModal(index);
+    }
+    updateAIProgress(100);
   }
+}
+
+// 原始的本地食物識別函數 - 作為備份
+async function identifyFoodInImage(photo, index) {
+  updateStatus('使用本地識別方法...');
   
   try {
     // 加載圖像
@@ -1031,96 +1014,242 @@ async function identifyFoodInImage(photo, index) {
       setTimeout(resolve, 3000); // 圖像加載超時，避免無限等待
     });
     
-    // 使用MobileNet模型進行預測
-    const predictions = await mobileNetModel.classify(img, TOPK_PREDICTIONS);
-    console.log('預測結果:', predictions);
+    // 創建畫布進行圖像分析
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = Math.min(img.width, 300); // 限制大小以加快處理速度
+    canvas.height = Math.min(img.height, 300);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     
-    if (predictions && predictions.length > 0) {
-      // 檢查是否為非食物
-      const isNonFood = predictions.some(p => 
-        nonFoodCategories.some(cat => 
-          p.className.toLowerCase().includes(cat.toLowerCase()) && p.probability > 0.5
-        )
-      );
-      
-      if (isNonFood) {
-        // 如果預測為非食物，標記為非食物
-        photo.label = 'non-food';
-        photo.sugar = 0;
-        photo.state = 'done';
-        photo.source = 'ai';
-        photo.predictions = predictions;
-        renderPhotos();
-        updateSugarSum();
-        return;
-      }
-      
-      // 嘗試將預測結果映射到我們的食物類別
-      let mappedFood = null;
-      const topPrediction = predictions[0].className.toLowerCase();
-      
-      // 遍歷預測結果，找到最匹配的食物類別
-      for (const prediction of predictions) {
-        const className = prediction.className.toLowerCase();
-        const words = className.split(/[\s,]+/);
-        
-        // 逐個單詞查找匹配
-        for (const word of words) {
-          if (word.length < 3) continue; // 跳過太短的單詞
-          
-          // 在食物映射中查找
-          for (const [key, value] of Object.entries(foodMapping)) {
-            if (key.includes(word) || word.includes(key)) {
-              mappedFood = value;
-              break;
-            }
-          }
-          if (mappedFood) break;
-        }
-        if (mappedFood) break;
-      }
-      
-      // 如果沒有找到匹配，使用默認食物
-      if (!mappedFood) {
-        // 嘗試通過文件名猜測
-        mappedFood = guessFromFileName(photo.file);
-        
-        // 如果仍然無法猜測，使用默認值
-        if (!mappedFood) {
-          mappedFood = 'rice'; // 默認使用白飯
-        }
-      }
-      
+    // 獲取圖像數據
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // 使用增強版顏色和特徵分析識別食物
+    const colorFeatures = analyzeColorFeatures(imageData);
+    const shapeFeatures = analyzeShapeFeatures(imageData);
+    const fileNameHint = guessFromFileName(photo.file);
+    
+    // 結合所有特徵做出識別決策
+    const detectedFood = combinedFoodDecision(colorFeatures, fileNameHint, shapeFeatures);
+    
+    if (detectedFood) {
       // 設置照片信息
-      photo.label = mappedFood;
-      photo.sugar = sugarValues[mappedFood].sugar;
+      photo.label = detectedFood;
+      photo.sugar = sugarValues[detectedFood].sugar;
       photo.state = 'done';
-      photo.source = 'ai';
-      photo.predictions = predictions;
+      photo.source = 'local-detection';
       
       renderPhotos();
       updateSugarSum();
       
       // 提示用戶查看和編輯識別結果
-      updateStatus(`已識別為 ${sugarValues[mappedFood].name}，點擊照片可編輯`);
+      updateStatus(`已識別為 ${sugarValues[detectedFood].name}，點擊照片可編輯`);
+      return true;
     } else {
-      throw new Error('無法識別照片內容');
+      throw new Error('無法確定食物類型');
     }
   } catch (e) {
-    console.error('圖像識別失敗', e);
-    
-    // 如果識別失敗，設置默認值並讓用戶手動選擇
-    photo.state = 'done';
-    photo.label = 'rice'; // 預設值
-    photo.sugar = sugarValues['rice'].sugar;
-    photo.source = 'fallback';
-    renderPhotos();
-    updateSugarSum();
-    
-    // 彈出編輯窗口讓用戶選擇正確的食物類型
-    openEditModal(index);
-    updateStatus('自動識別失敗，請手動選擇食物類型');
+    console.error('本地圖像識別失敗', e);
+    throw e;
   }
+}
+
+// 分析顏色特徵以識別食物
+function analyzeColorFeatures(imageData) {
+  const data = imageData.data;
+  const width = imageData.width;
+  const height = imageData.height;
+  const step = 4; // 每像素4個值(RGBA)
+  
+  // 收集顏色統計
+  let redSum = 0, greenSum = 0, blueSum = 0;
+  let redVariance = 0, greenVariance = 0, blueVariance = 0;
+  let pixelCount = 0;
+  
+  // 計算平均顏色
+  for (let y = 0; y < height; y += 2) { // 取樣以加快速度
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      redSum += data[i];
+      greenSum += data[i + 1];
+      blueSum += data[i + 2];
+      pixelCount++;
+    }
+  }
+  
+  const redAvg = redSum / pixelCount;
+  const greenAvg = greenSum / pixelCount;
+  const blueAvg = blueSum / pixelCount;
+  
+  // 計算顏色方差以了解顏色分佈
+  for (let y = 0; y < height; y += 2) {
+    for (let x = 0; x < width; x += 2) {
+      const i = (y * width + x) * 4;
+      redVariance += Math.pow(data[i] - redAvg, 2);
+      greenVariance += Math.pow(data[i + 1] - greenAvg, 2);
+      blueVariance += Math.pow(data[i + 2] - blueAvg, 2);
+    }
+  }
+  
+  redVariance /= pixelCount;
+  greenVariance /= pixelCount;
+  blueVariance /= pixelCount;
+  
+  // 分析顏色區域分佈
+  const colorZones = analyzeColorZones(imageData);
+  
+  // 返回顏色特徵
+  return {
+    averageColor: { r: redAvg, g: greenAvg, b: blueAvg },
+    colorVariance: { r: redVariance, g: greenVariance, b: blueVariance },
+    colorZones
+  };
+}
+
+// 分析圖像中的顏色區域分佈
+function analyzeColorZones(imageData) {
+  const data = imageData.data;
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // 將圖像分為4個區域，計算每個區域的主要顏色
+  const zones = [];
+  const zoneWidth = Math.floor(width / 2);
+  const zoneHeight = Math.floor(height / 2);
+  
+  for (let zoneY = 0; zoneY < 2; zoneY++) {
+    for (let zoneX = 0; zoneX < 2; zoneX++) {
+      let redSum = 0, greenSum = 0, blueSum = 0;
+      let pixelCount = 0;
+      
+      const startX = zoneX * zoneWidth;
+      const startY = zoneY * zoneHeight;
+      const endX = startX + zoneWidth;
+      const endY = startY + zoneHeight;
+      
+      for (let y = startY; y < endY; y += 2) {
+        for (let x = startX; x < endX; x += 2) {
+          const i = (y * width + x) * 4;
+          redSum += data[i];
+          greenSum += data[i + 1];
+          blueSum += data[i + 2];
+          pixelCount++;
+        }
+      }
+      
+      if (pixelCount > 0) {
+        zones.push({
+          x: zoneX,
+          y: zoneY,
+          color: {
+            r: redSum / pixelCount,
+            g: greenSum / pixelCount,
+            b: blueSum / pixelCount
+          }
+        });
+      }
+    }
+  }
+  
+  return zones;
+}
+
+// 分析形狀和紋理特徵
+function analyzeShapeFeatures(imageData) {
+  const data = imageData.data;
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // 計算邊緣密度 (紋理複雜度的簡單度量)
+  let edgeCount = 0;
+  const threshold = 30; // 邊緣檢測閾值
+  
+  for (let y = 1; y < height - 1; y += 2) {
+    for (let x = 1; x < width - 1; x += 2) {
+      const i = (y * width + x) * 4;
+      const top = ((y - 1) * width + x) * 4;
+      const bottom = ((y + 1) * width + x) * 4;
+      const left = (y * width + (x - 1)) * 4;
+      const right = (y * width + (x + 1)) * 4;
+      
+      // 簡單的邊緣檢測
+      const diffH = Math.abs(data[left] - data[right]) + 
+                    Math.abs(data[left + 1] - data[right + 1]) + 
+                    Math.abs(data[left + 2] - data[right + 2]);
+                    
+      const diffV = Math.abs(data[top] - data[bottom]) + 
+                    Math.abs(data[top + 1] - data[bottom + 1]) + 
+                    Math.abs(data[top + 2] - data[bottom + 2]);
+                    
+      if (diffH > threshold || diffV > threshold) {
+        edgeCount++;
+      }
+    }
+  }
+  
+  const edgeDensity = edgeCount / ((width * height) / 4); // 歸一化
+  
+  // 形狀近似 (通過檢測圓形和直線等特性)
+  // 這裡做一個簡單的圓形檢測，適用於檢測蘋果等水果
+  
+  let centerX = width / 2;
+  let centerY = height / 2;
+  let roundnessScore = 0;
+  let maxDistance = Math.sqrt(Math.pow(width/2, 2) + Math.pow(height/2, 2));
+  let samplePoints = 0;
+  
+  // 檢測邊緣的圓形度
+  for (let angle = 0; angle < 360; angle += 10) {
+    const radians = angle * Math.PI / 180;
+    for (let dist = 0.5; dist <= 1.0; dist += 0.1) {
+      const x = Math.round(centerX + Math.cos(radians) * (width/2) * dist);
+      const y = Math.round(centerY + Math.sin(radians) * (height/2) * dist);
+      
+      if (x >= 0 && x < width && y >= 0 && y < height) {
+        const i = (y * width + x) * 4;
+        
+        // 檢查這個點是否是邊緣點
+        const neighbors = [
+          ((y-1) * width + x) * 4,
+          ((y+1) * width + x) * 4,
+          (y * width + (x-1)) * 4,
+          (y * width + (x+1)) * 4
+        ];
+        
+        let isEdge = false;
+        for (const ni of neighbors) {
+          if (ni >= 0 && ni < data.length) {
+            const diff = Math.abs(data[i] - data[ni]) + 
+                          Math.abs(data[i+1] - data[ni+1]) + 
+                          Math.abs(data[i+2] - data[ni+2]);
+            if (diff > threshold) {
+              isEdge = true;
+              break;
+            }
+          }
+        }
+        
+        if (isEdge) {
+          const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+          const expectedDistance = (width + height) / 4; // 理想圓的半徑
+          roundnessScore += 1 - Math.abs(distance - expectedDistance) / expectedDistance;
+          samplePoints++;
+        }
+      }
+    }
+  }
+  
+  // 歸一化圓形度分數
+  roundnessScore = samplePoints > 0 ? roundnessScore / samplePoints : 0;
+  
+  // 返回形狀和紋理特徵
+  return {
+    edgeDensity,
+    roundnessScore,
+    width,
+    height,
+    aspectRatio: width / height
+  };
 }
 
 // 從文件名猜測食物類型
@@ -1129,21 +1258,125 @@ function guessFromFileName(fileName) {
   
   const lowerName = fileName.toLowerCase();
   
-  // 檢查文件名是否包含已知食物名稱
-  for (const food in sugarValues) {
-    if (lowerName.includes(food)) {
-      return food;
-    }
-  }
-  
-  // 嘗試通過食物映射匹配
-  for (const [key, value] of Object.entries(foodMapping)) {
-    if (lowerName.includes(key)) {
-      return value;
-    }
-  }
+  // 簡單的關鍵詞匹配
+  if (lowerName.includes('apple') || lowerName.includes('蘋果')) return 'apple';
+  if (lowerName.includes('rice') || lowerName.includes('飯') || lowerName.includes('米')) return 'rice';
+  if (lowerName.includes('bread') || lowerName.includes('麵包')) return 'bread';
+  if (lowerName.includes('corn') || lowerName.includes('玉米')) return 'corn';
+  if (lowerName.includes('vegetable') || lowerName.includes('蔬菜')) return 'vegetable';
+  if (lowerName.includes('chocolate') || lowerName.includes('巧克力')) return 'chocolate';
+  if (lowerName.includes('banana') || lowerName.includes('香蕉')) return 'banana';
   
   return null;
+}
+
+// 結合所有特徵做出最終決策
+function combinedFoodDecision(colorFeatures, fileNameHint, shapeFeatures) {
+  // 1. 如果文件名有明確提示，優先採用
+  if (fileNameHint) return fileNameHint;
+  
+  // 2. 根據顏色特徵識別
+  const averageColor = colorFeatures.averageColor;
+  const { r, g, b } = averageColor;
+  
+  // 蘋果特徵檢測 - 紅色或綠色，高圓形度
+  if (((r > 150 && g < 100 && b < 100) || (r < 120 && g > 150 && b < 100)) && 
+      shapeFeatures.roundnessScore > 0.6) {
+    return 'apple';
+  }
+  
+  // 白飯特徵檢測 - 白色/淺色，紋理均勻
+  if (r > 180 && g > 180 && b > 180 && colorFeatures.colorVariance.r < 1000) {
+    return 'rice';
+  }
+  
+  // 玉米特徵檢測 - 黃色，紋理中等
+  if (r > 180 && g > 150 && b < 100 && colorFeatures.colorVariance.r > 1000) {
+    return 'corn';
+  }
+  
+  // 蔬菜特徵檢測 - 綠色系，較高邊緣密度
+  if (g > r && g > b && shapeFeatures.edgeDensity > 0.1) {
+    return 'vegetable';
+  }
+  
+  // 巧克力特徵檢測 - 深褐色
+  if (r > 100 && r < 150 && g < 100 && b < 80) {
+    return 'chocolate';
+  }
+  
+  // 依據平均顏色做進一步判斷
+  if (r > 200 && g > 200 && b > 200) return 'rice'; // 白色系
+  if (r > 180 && g > 150 && b < 110) return 'corn'; // 黃色系
+  if (r > 150 && g < 100 && b < 100) return 'apple'; // 紅色系
+  if (r < 100 && g > 120 && b < 100) return 'vegetable'; // 綠色系
+  if (r < 80 && g < 80 && b < 80) return 'chocolate'; // 深色系
+  
+  // 3. 結合形狀特徵做進一步判斷
+  
+  // 圓形度高的可能是蘋果或其他水果
+  if (shapeFeatures.roundnessScore > 0.7) {
+    if (r > g && r > b) return 'apple'; // 偏紅的圓形物體
+    if (g > r && g > b) return 'apple'; // 偏綠的圓形物體
+    return 'fruit';
+  }
+  
+  // 邊緣密度低，顏色均勻的可能是米飯
+  if (shapeFeatures.edgeDensity < 0.05 && 
+      colorFeatures.colorVariance.r < 500 && 
+      colorFeatures.colorVariance.g < 500 && 
+      colorFeatures.colorVariance.b < 500) {
+    return 'rice';
+  }
+  
+  // 邊緣密度很高的可能是蔬菜或肉類
+  if (shapeFeatures.edgeDensity > 0.2) {
+    if (g > r && g > b) return 'vegetable';
+    if (r > g && r > b) return 'meat';
+  }
+  
+  // 顏色區域分析 - 檢測顏色是否集中或分散
+  let colorZoneVariance = 0;
+  const zones = colorFeatures.colorZones;
+  if (zones.length > 0) {
+    let zoneRedSum = 0, zoneGreenSum = 0, zoneBlueSum = 0;
+    zones.forEach(zone => {
+      zoneRedSum += zone.color.r;
+      zoneGreenSum += zone.color.g;
+      zoneBlueSum += zone.color.b;
+    });
+    
+    const zoneRedAvg = zoneRedSum / zones.length;
+    const zoneGreenAvg = zoneGreenSum / zones.length;
+    const zoneBlueAvg = zoneBlueSum / zones.length;
+    
+    zones.forEach(zone => {
+      colorZoneVariance += Math.pow(zone.color.r - zoneRedAvg, 2);
+      colorZoneVariance += Math.pow(zone.color.g - zoneGreenAvg, 2);
+      colorZoneVariance += Math.pow(zone.color.b - zoneBlueAvg, 2);
+    });
+    
+    colorZoneVariance /= zones.length * 3;
+    
+    // 顏色區域變化很大可能是混合食物
+    if (colorZoneVariance > 2000) {
+      if (g > r && g > b) return 'vegetable';
+      if (r > 150 && g > 100 && b < 100) return 'fruit';
+    }
+  }
+  
+  // 默認返回最佳猜測
+  // 使用顏色作為最後決策依據
+  const redGreenRatio = r / (g + 0.1); // 防止除以零
+  const redBlueRatio = r / (b + 0.1);
+  const greenRedRatio = g / (r + 0.1);
+  
+  if (redGreenRatio > 1.5 && redBlueRatio > 1.5) return 'apple'; // 紅色強勢
+  if (greenRedRatio > 1.3) return 'vegetable'; // 綠色強勢
+  if (r > 200 && g > 180 && b < 100) return 'corn'; // 黃色
+  if (r > 180 && g > 180 && b > 180) return 'rice'; // 白色
+  
+  return 'rice'; // 默認值
 }
 
 // 處理照片縮圖點擊事件
@@ -1205,14 +1438,11 @@ function openEditModal(index) {
   // 設置圖片
   $('editImage').src = photo.url;
   
-  // 如果有AI預測結果，顯示預測信息
-  if (photo.predictions && photo.predictions.length > 0) {
-    const topPredictions = photo.predictions.slice(0, 3);
-    const predictionText = topPredictions.map(p => 
-      `${p.className}: ${(p.probability * 100).toFixed(1)}%`
-    ).join('<br>');
-    
-    $('aiResult').innerHTML = `AI預測結果:<br>${predictionText}`;
+  // 設置分析結果說明
+  if (photo.source === 'cloudflare-worker') {
+    $('aiResult').textContent = `雲端識別為: ${sugarValues[photo.label]?.name || photo.label}`;
+  } else if (photo.source === 'local-detection' || photo.source === 'advanced-detection') {
+    $('aiResult').textContent = `本地識別為: ${sugarValues[photo.label]?.name || photo.label}`;
   } else {
     $('aiResult').textContent = '';
   }
