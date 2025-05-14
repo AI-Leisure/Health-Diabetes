@@ -274,4 +274,147 @@ function renderPhotos(){
 
 /* ---------- 刪除 / 編輯 糖份 ---------- */
 function photoClick(e){
-  if(e.target.dataset.del
+  if(e.target.dataset.del!==undefined){
+    photos.splice(+e.target.dataset.del,1);
+    renderPhotos();
+  }else if(e.target.dataset.edit!==undefined){
+    dlgIndex=+e.target.dataset.edit;
+    dlgInput.value=photos[dlgIndex].sugarPer100??'';
+    dlg.style.display='flex';dlgInput.focus();
+  }
+}
+
+/* ---------- 對話框 ---------- */
+$('dlgOK').onclick=()=>{
+  const v=parseFloat(dlgInput.value);
+  if(!isNaN(v)&&v>=0){photos[dlgIndex].sugarPer100=+v;renderPhotos();}
+  dlg.style.display='none';
+};
+$('dlgCancel').onclick=()=>dlg.style.display='none';
+dlg.onclick=e=>{if(e.target===dlg)dlg.style.display='none';};
+
+/* ---------- 儲存紀錄 ---------- */
+$('recordForm').onsubmit=e=>{
+  e.preventDefault();
+  const sugarMg=parseFloat(sugarInput.value)||null;
+  records.unshift({
+    name:$('name').value.trim(),
+    age:+$('age').value,
+    date:dateInput.value,
+    meal:$('meal').value,
+    sugarMg,
+    sugarMmol:sugarMg? +(sugarMg/18).toFixed(1): null,
+    photos:[...photos]   // deep copy
+  });
+  e.target.reset();photos=[];renderPhotos();
+  dateInput.value=new Date().toISOString().split('T')[0];
+  refresh();
+  alert('已儲存！');
+};
+
+/* ---------- 列表/日曆/圖表 ---------- */
+function refresh(){buildList();buildCalendar();if(chartVisible)buildChart();}
+
+function buildList(){
+  listBox.innerHTML='';
+  const ym=filterMonth.value, show=showInfoChk.checked;
+  records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
+    const c=document.createElement('div');c.className='card';
+    const name=show?r.name:'****', age=show?r.age:'**';
+    c.innerHTML=`
+      <h4>${r.date}（${r.meal}）</h4>
+      <p>姓名：${name}　年齡：${age}</p>
+      ${r.sugarMg?`<p>血糖：<strong>${r.sugarMg}</strong> mg/dL ≈ ${r.sugarMmol} mmol/L</p>`:'<p>未量血糖</p>'}`;
+    if(r.photos.length){
+      const at=document.createElement('div');at.className='attach';
+      r.photos.forEach(p=>{
+        const fig=document.createElement('figure');
+        fig.innerHTML=`
+          <img src="${p.url}">
+          <figcaption>${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</figcaption>`;
+        at.appendChild(fig);
+      });
+      c.appendChild(at);
+    }
+    listBox.appendChild(c);
+  });
+}
+
+function buildCalendar(){
+  const ym=filterMonth.value||new Date().toISOString().slice(0,7);
+  const [y,m]=ym.split('-').map(Number);
+  const first=new Date(y,m-1,1), total=new Date(y,m,0).getDate();
+  let html='<table class="calendar"><thead><tr>';
+  '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
+  for(let i=0;i<first.getDay();i++)html+='<td></td>';
+  for(let d=1;d<=total;d++){
+    const ds=`${ym}-${String(d).padStart(2,'0')}`;
+    const rows=records.filter(r=>r.date===ds);
+    const sugars=rows.flatMap(r=>r.photos.map(p=>p.sugarPer100).filter(v=>v!==null));
+    const avg=sugars.reduce((s,v)=>s+v,0)/(sugars.length||1);
+    html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>Avg:${avg?avg.toFixed(1)+'g':''}`:''}</td>`;
+    if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
+  }
+  const rest=(first.getDay()+total)%7;if(rest)for(let i=0;i<7-rest;i++)html+='<td></td>';
+  html+='</tr></tbody></table>';
+  calBox.innerHTML=html;
+}
+
+function toggleChart(){
+  if(!chartVisible&&getChartRows().length===0){alert('目前沒有數據');return;}
+  chartVisible=!chartVisible;
+  toggleChartBtn.textContent=chartVisible?'隱藏圖表':'分析圖表';
+  buildChart();
+}
+
+function getChartRows(){
+  const ym=filterMonth.value;
+  return records.filter(r=>(!ym||r.date.startsWith(ym)) && r.sugarMg);
+}
+function buildChart(){
+  if(!chartVisible){chartWrap.style.display='none';return;}
+  const rows=getChartRows();
+  if(!rows.length){chartWrap.style.display='none';return;}
+  const labels=rows.map(r=>r.date+' '+r.meal);
+  const data=rows.map(r=>r.sugarMg);
+  chartWrap.style.display='block';
+  chart?.destroy();
+  chart=new Chart($('sugarChart'),{
+    type:'line',
+    data:{labels,datasets:[{label:'血糖 (mg/dL)',data,
+      borderColor:'#d32f2f',backgroundColor:'#d32f2f33',
+      tension:.25,pointRadius:4,pointBackgroundColor:'#d32f2f'}]},
+    options:{scales:{y:{beginAtZero:false}}}
+  });
+}
+
+/* ---------- CSS var ---------- */
+function getCss(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+
+/* ---------- 相機 ---------- */
+const camModal=$('camModal'), camPrev=$('camPrev'), shutter=$('shutter'), camClose=$('camClose');
+async function handleCaptureClick(){
+  if(camModal.style.display==='flex')return;
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){capIn.click();return;}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    camPrev.srcObject=stream;await camPrev.play();
+    camModal.style.display='flex';
+  }catch{capIn.click();}
+}
+function takeShot(){
+  const w=camPrev.videoWidth,h=camPrev.videoHeight;if(!w)return;
+  const max=1024, r=max/Math.max(w,h);const nw=r<1?w*r:w, nh=r<1?h*r:h;
+  const cvs=document.createElement('canvas');cvs.width=nw;cvs.height=nh;
+  cvs.getContext('2d').drawImage(camPrev,0,0,nw,nh);
+  cvs.toBlob(b=>{
+    photos.push({url:URL.createObjectURL(b),name:`cam_${Date.now()}.jpg`,sugarPer100:null});
+    renderPhotos();closeCam();
+  },'image/jpeg',0.7);
+}
+shutter.onclick=takeShot;camPrev.onclick=takeShot;
+camClose.onclick=closeCam;window.addEventListener('keydown',e=>{if(e.key==='Escape')closeCam();});
+function closeCam(){stream?.getTracks().forEach(t=>t.stop());stream=null;camModal.style.display='none';}
+</script>
+</body>
+</html>
