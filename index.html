@@ -3,104 +3,135 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
-<title>Camera All-in-One Tester</title>
+<title>MyDiabetes – MVP</title>
+
 <style>
 :root{--w:min(100vw,480px)}
-body{
-  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
-               "Helvetica Neue",Arial,sans-serif;
-  margin:0;padding:1.2rem;display:flex;flex-direction:column;align-items:center}
-h1{font-size:1.25rem;margin:.2rem 0 .8rem}
-button{margin:.4rem 0;padding:.4rem 1.2rem;font-size:1rem}
-video,canvas,img{width:var(--w);max-width:100%;border:1px solid #666}
-#log{width:var(--w);max-width:100%;margin-top:.8rem;
-     font-size:.9rem;white-space:pre-wrap;background:#111;color:#0f0;padding:.6rem}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+     "Helvetica Neue",Arial,sans-serif;margin:0;padding:1rem;
+     display:flex;flex-direction:column;align-items:center;gap:.8rem}
+h1{font-size:1.4rem;margin:.2rem 0 1rem}
+input,button,select{font-size:1rem;padding:.4rem}
+table{width:var(--w);border-collapse:collapse;font-size:.9rem}
+td,th{border:1px solid #aaa;padding:.3rem;text-align:center}
+canvas{width:var(--w);max-width:100%;border:1px solid #666}
+#preview{width:100%;max-width:var(--w);border:1px solid #666;margin-top:.5rem}
 </style>
 
-<h1>📷 Camera Tester</h1>
+<h1>MyDiabetes – 血糖紀錄 MVP</h1>
 
-<button id="openBtn">🎥 開相機</button>
-<button id="shotBtn" style="display:none">📸 擷取</button>
-<button id="stopBtn" style="display:none">⏹️ 關閉</button><br>
+<!-- ===== 新增紀錄 ===== -->
+<form id="addForm">
+  日期 <input type="date" id="dt" required>
+  時間 <input type="time" id="tm" required>
+  血糖 <input type="number" id="gl" min="20" max="600" required> mg/dL
+  <button>➕ 新增</button>
+</form>
 
-<video id="preview" playsinline muted></video>
-<canvas id="cvs" style="display:none"></canvas>
+<button id="camBtn">📷 相機拍照（可附證據）</button>
+<video id="camView" style="display:none" playsinline></video>
+<canvas id="shotCanvas" style="display:none"></canvas>
+<img id="preview" hidden>
 
-<!-- 後備方案：在 getUserMedia 失敗時觸發 -->
-<input id="fileInput" type="file"
-       accept="image/jpeg"
-       capture="environment"
-       style="display:none">
+<!-- ===== 紀錄列表 ===== -->
+<table id="tbl">
+  <thead><tr><th>日期</th><th>時間</th><th>血糖</th><th>相片</th><th></th></tr></thead>
+  <tbody></tbody>
+</table>
 
-<pre id="log">👉 按「開相機」開始測試…</pre>
+<!-- ===== 趨勢圖 ===== -->
+<canvas id="chart" height="160"></canvas>
 
 <script>
-/* ========= DOM 快捷 ============ */
-const $ = id => document.getElementById(id);
-const log = msg => $.log.textContent = msg;
+/* ==== 工具 ==== */
+const $ = s=>document.querySelector(s);
+const LS_KEY='mdb_data';
+let data = JSON.parse(localStorage.getItem(LS_KEY)||'[]');
 
-/* ========= 主要元素 ============ */
-const openBtn  = $('openBtn');
-const shotBtn  = $('shotBtn');
-const stopBtn  = $('stopBtn');
-const videoEl  = $('preview');
-const cvs      = $('cvs');
-const fileIn   = $('fileInput');
-
-let stream;     // MediaStream 供關閉用
-
-/* ========= 開相機（優先 getUserMedia） ============ */
-openBtn.onclick = async () => {
-  // 必須 HTTPS 或 localhost
-  if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-    log('🚫 需在 HTTPS 執行，否則無法使用相機！');
-    return;
-  }
-
-  try {
-    stream = await navigator.mediaDevices.getUserMedia(
-              { video: { facingMode: { exact:'environment' } } });
-    videoEl.srcObject = stream;
-    await videoEl.play();
-    shotBtn.style.display = stopBtn.style.display = 'inline-block';
-    log('✅ getUserMedia 成功，鏡頭已開啟');
-  } catch (err) {
-    log('⚠️ getUserMedia 失敗：' + err.name +
-        '\n→ 改用 <input capture> 後備方案');
-    // 退回 input capture
-    fileIn.click();
+/* ==== 畫表格 ==== */
+function render(){
+  const tb=$('#tbl tbody');
+  tb.innerHTML='';
+  data.forEach((d,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${d.d}</td><td>${d.t}</td><td>${d.g}</td>
+      <td>${d.img?'<a href="'+d.img+'" target=_blank>查看</a>':''}</td>
+      <td><button data-i=${i}>🗑️</button></td>`;
+    tb.appendChild(tr);
+  });
+  drawChart();
+}
+$('#tbl').onclick=e=>{
+  if(e.target.tagName==='BUTTON'){
+    data.splice(e.target.dataset.i,1);
+    save();
   }
 };
+function save(){
+  localStorage.setItem(LS_KEY,JSON.stringify(data));
+  render();
+}
 
-/* ========= 擷取一張照片 ============ */
-shotBtn.onclick = () => {
-  const { videoWidth: w, videoHeight: h } = videoEl;
-  if (!w) { log('⚠️ video 未就緒'); return; }
-  cvs.width = w; cvs.height = h;
-  cvs.getContext('2d').drawImage(videoEl, 0, 0, w, h);
-  cvs.toBlob(blob => {
-    const kb = (blob.size / 1024).toFixed(1);
-    log(`📎 擷取完成：${kb} KB\n（此處可上傳 blob 或做預覽）`);
-  }, 'image/jpeg', 0.92);
+/* ==== 新增紀錄 ==== */
+$('#addForm').onsubmit=e=>{
+  e.preventDefault();
+  data.push({d:$('#dt').value,t:$('#tm').value,g:+$('#gl').value,img:$('#preview').src||''});
+  $('#preview').hidden=true; $('#preview').src='';
+  save(); e.target.reset();
 };
 
-/* ========= 關閉相機 ============ */
-stopBtn.onclick = () => {
-  stream?.getTracks().forEach(t => t.stop());
-  videoEl.srcObject = null;
-  shotBtn.style.display = stopBtn.style.display = 'none';
-  log('⏹️ 相機已關閉');
-};
+/* ==== 簡易趨勢圖（純 Canvas，不用外部庫） ==== */
+function drawChart(){
+  const cvs=$('#chart'), ctx=cvs.getContext('2d');
+  const W=cvs.width, H=cvs.height; ctx.clearRect(0,0,W,H);
+  if(!data.length) return;
+  const pts=data.map(d=>d.g);
+  const max=Math.max(...pts)+20, min=Math.min(...pts)-20;
+  // grid
+  ctx.strokeStyle='#ccc'; ctx.lineWidth=1;
+  for(let y=0;y<=4;y++){
+    const py=y*H/4; ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(W,py);ctx.stroke();
+    ctx.fillText(Math.round(max-(max-min)*y/4),2,py-2);
+  }
+  // line
+  ctx.strokeStyle='#0a0'; ctx.lineWidth=2; ctx.beginPath();
+  pts.forEach((v,i)=>{
+    const x=i*(W/(pts.length-1)||1);
+    const y=(1-(v-min)/(max-min))*H;
+    i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  });
+  ctx.stroke();
+}
 
-/* ========= <input capture> 回傳檔案 ============ */
-fileIn.onchange = e => {
-  const f = e.target.files[0];
-  if (f) {
-    log('✅ 由 <input> 取得：' + f.name +
-        '\n檔案大小：' + (f.size/1024).toFixed(1) + ' KB');
-  } else {
-    log('🚫 未選擇任何檔案');
+/* ==== 相機 ==== */
+const camBtn=$('#camBtn'), v=$('#camView'), cvs=$('#shotCanvas'), pre=$('#preview');
+let stream;
+camBtn.onclick=async()=>{
+  if(stream){ stopCam(); return;}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    v.srcObject=stream; await v.play();
+    v.style.display='block'; camBtn.textContent='📸 拍照';
+  }catch(err){
+    alert('無法開啟相機：'+err);
   }
 };
+v.onclick=()=>{ // 點擊預覽拍一張
+  const {videoWidth:w,videoHeight:h}=v;
+  cvs.width=w;cvs.height=h;
+  cvs.getContext('2d').drawImage(v,0,0,w,h);
+  pre.src=cvs.toDataURL('image/jpeg',0.92);
+  pre.hidden=false;
+  stopCam();
+};
+function stopCam(){
+  stream?.getTracks().forEach(t=>t.stop());
+  stream=null; v.style.display='none'; camBtn.textContent='📷 相機拍照';
+}
+
+/* ==== 首次渲染 ==== */
+render();
 </script>
 </html>
