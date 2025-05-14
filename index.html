@@ -1,106 +1,118 @@
 <!DOCTYPE html>
-<!--  糖尿病健康管理  v3.2  (2024-06-26)
-     • 經 Cloudflare Worker 代理查 OpenFoodFacts，解決封鎖
-     • 取 MobileNet Top-3 標籤，提高命中率
------------------------------------------------------------------ -->
-<html lang="zh-Hant">
+<html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>糖尿病健康管理</title>
-<style>
-:root{--c1:#1976d2;--c2:#d32f2f;--r:8px;font-family:system-ui,-apple-system,"Noto Sans","Segoe UI",sans-serif}
-*{box-sizing:border-box;margin:0}
-body{background:#fafafa;color:#333;display:flex;flex-direction:column;min-height:100vh}
-header{background:var(--c1);color:#fff;padding:1rem;text-align:center}
-nav{display:flex}nav button{flex:1;padding:.7rem;border:0;background:#eee;font-size:1rem}
-nav button.active{color:var(--c1);background:#fff;font-weight:700;border-bottom:3px solid var(--c1)}
-main{flex:1;width:95%;max-width:900px;margin:1rem auto}
-section{display:none}section.active{display:block}
-/* --- 其他 CSS 全與 v3.1 相同 --- */
-form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
-label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
-input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
-input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
-.inline{flex-direction:row;align-items:center;gap:.45rem}
-#photosWrap{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.4rem}
-.photo-thumb{width:80px;height:80px;border:1px solid #ccc;border-radius:var(--r);position:relative;overflow:hidden}
-.photo-thumb img{width:100%;height:100%;object-fit:cover}
-.photo-thumb span.del{position:absolute;top:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
-.photo-thumb span.edit{position:absolute;bottom:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
-.photo-thumb em{position:absolute;left:0;right:0;bottom:0;background:#fff;color:#000;font-size:.9rem;font-weight:600;text-align:center;cursor:pointer}
-/* 下面 Calendar / Chart / Modal 的 CSS 與 v3.1 完全相同，為節省篇幅未再重複 */
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Food Sugar Checker</title>
+
+  <!-- 簡易樣式，直接寫在頁面方便複製 -->
+  <style>
+    *{box-sizing:border-box;font-family:system-ui,Helvetica,Arial,sans-serif}
+    body{margin:0;padding:2rem;text-align:center;background:#f9fafb;color:#222}
+    h1{margin:0 0 1rem;font-size:1.6rem}
+    #uploader{margin:1rem 0}
+    #canvas{display:none;border:1px solid #ccc;margin:1rem auto}
+    #result{margin-top:1rem;font-size:1.1rem;min-height:3.5rem}
+    .api{font-size:.8rem;color:#666;margin-top:2rem}
+    .loading{opacity:.5;pointer-events:none}
+  </style>
 </head>
 <body>
-<header><h1>糖尿病健康管理</h1></header>
 
-<!-- ===== 版面 HTML 與 v3.1 完全一致，略 ===== -->
-<!--  ...（請保持上一次的版面標籤，未修改） ... -->
+  <h1>🍩 Food Sugar Checker</h1>
 
-<!-- scripts -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.16.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.1/dist/mobilenet.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <!-- 1. 上載圖片 -->
+  <input id="uploader" type="file" accept="image/*">
 
-<script>
-/* ========= 你自己的 Worker 代理網址 ========= */
-const WORKER = 'https://off-proxy.leisure9654.workers.dev/
+  <!-- 2. Canvas 讓 MobileNet 用來預處理 -->
+  <canvas id="canvas" width="224" height="224"></canvas>
 
-/* === util === */
-const $=id=>document.getElementById(id);
-const today=()=>new Date().toISOString().split('T')[0];
+  <!-- 3. 結果顯示 -->
+  <div id="result">Select a food picture…</div>
 
-/* === state === */
-let photos=[],records=[],chartVisible=false,chart,stream,dlgIdx=-1,mobilenetModel;
+  <div class="api">
+    Powered by TensorFlow JS MobileNet &amp; OpenFoodFacts API
+  </div>
 
-/* === init === */
-document.addEventListener('DOMContentLoaded',async()=>{
-  $('date').value=today();
-  $('name').value=localStorage.getItem('dm_name')||'';$('age').value=localStorage.getItem('dm_age')||'';
-  mobilenetModel=await mobilenet.load();console.log('✔ MobileNet loaded');
-  togglePersonal();refresh();
-});
-$('showInfo').onchange=togglePersonal;
-function togglePersonal(){const s=$('showInfo').checked;document.querySelector('.personal').style.display=s?'flex':'none';$('name').required=$('age').required=s;}
+  <!-- 4. 載入 TensorFlow 與 MobileNet -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.0"></script>
 
-/* === 其餘 Tabs / Camera / List / Chart 代碼與 v3.1 相同，唯 aiEstimate & fetchSugar 有改 === */
+  <script>
+  /* ---------------- 可編輯設定 ---------------- */
+  // 把 YOUR_WORKER_URL 換成你的 Cloudflare Worker 完整網址
+  const WORKER = 'https://off-proxy.leisure9654.workers.dev/
+  /* ------------------------------------------ */
 
-/* === AI 分析相片 === */
-async function aiEstimate(p){
-  try{
-    const img=new Image();img.src=p.url;await img.decode();
-    const preds=await mobilenetModel.classify(img);          // 取 top-3
-    const labels=preds.slice(0,3).map(o=>o.className.split(',')[0]);
-    console.log('► labels',labels);
-    const g=await fetchSugar(labels);
-    p.state = (g!==null?'done':'fail');
-    if(g!==null) p.sugarPer100 = g;
-  }catch(e){console.warn(e);p.state='fail';}
-  renderPhotos();refresh();
-}
+  const fileInput  = document.getElementById('uploader');
+  const canvas     = document.getElementById('canvas');
+  const resultBox  = document.getElementById('result');
+  const ctx        = canvas.getContext('2d');
 
-/* === 透過 Worker 查 OpenFoodFacts，依序嘗試多個關鍵字 === */
-async function fetchSugar(labelArr){
-  for(const kw of labelArr){
-    try{
-      const api=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(kw)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
-      const r=await fetch(WORKER + '?url=' + encodeURIComponent(api));
-      if(!r.ok) throw 'worker fetch err';
-      const js=await r.json();
-      const list=js.products.filter(p=>p.nutriments?.sugars_100g>0).map(p=>p.nutriments.sugars_100g);
-      if(list.length){
-        const avg=+(list.reduce((s,v)=>s+v,0)/list.length).toFixed(1);
-        console.log(`   ↳ ${kw} 平均 ${avg} g/100g`);
-        return avg;
-      }
-    }catch(e){console.warn('fetchSugar',kw,e);}
+  let model;
+
+  // 1. 載入 MobileNet
+  async function loadModel(){
+    resultBox.textContent = 'Loading MobileNet model…';
+    model = await mobilenet.load();
+    resultBox.textContent = 'Model ready ✅';
   }
-  return null;            // 三個關鍵字都沒結果
-}
+  loadModel();
 
-/* === 以下其餘程式（拍照、縮圖 render、刪除、手動輸入、表單送出、列表、月曆、圖表…）
-       與 v3.1 一模一樣，請完整保留 === */
-</script>
+  // 2. 使用者選擇圖片
+  fileInput.addEventListener('change', async e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+
+    // UI 鎖定
+    document.body.classList.add('loading');
+    resultBox.textContent='Analyzing image…';
+
+    // 讀圖→畫到 224×224 canvas
+    const img = new Image();
+    img.onload = ()=> {
+      ctx.drawImage(img, 0, 0, 224, 224);
+      classifyAndQuery();
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+  // 3. 影像分類 + 查糖份
+  async function classifyAndQuery(){
+    try{
+      // (1) MobileNet 取前 3 個 label
+      const predictions = await model.classify(canvas);
+      console.log('predictions', predictions);
+      if(!predictions.length){
+        resultBox.textContent='Could not recognise food 🙈';
+        return;
+      }
+      // 取最可能的一個標籤
+      const label = predictions[0].className.split(',')[0].trim();
+      resultBox.textContent = `🔍 Searching sugar info for “${label}”…`;
+
+      // (2) 呼叫你的 CORS Worker → OpenFoodFacts
+      const url = encodeURIComponent(
+        `https://world.openfoodfacts.org/api/v2/search?categories_tags_en=${label}&fields=product_name,nutriments&json=1&page_size=1`);
+      const resp = await fetch(`${WORKER}?url=${url}`);
+      const data = await resp.json();
+
+      const product = data.products?.[0];
+      const sugar = product?.nutriments?.['sugars_100g'];
+
+      if(sugar!=null){
+        resultBox.innerHTML =
+          `🌟 ${product.product_name || label}<br>🧁 Sugar ≈ <b>${sugar} g / 100 g</b>`;
+      }else{
+        resultBox.textContent='No sugar data found 😢';
+      }
+    }catch(err){
+      console.error(err);
+      resultBox.textContent='Error 😵‍💫 – open console for details';
+    }finally{
+      document.body.classList.remove('loading');
+    }
+  }
+  </script>
 </body>
 </html>
