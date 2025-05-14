@@ -58,6 +58,13 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
   border-radius:50%;background:#fff;border:1px solid #888;
   font-size:.7rem;line-height:16px;text-align:center;cursor:pointer
 }
+.edit-sugar{
+  position:absolute;top:-5px;left:-5px;width:18px;height:18px;
+  border-radius:50%;background:#fff;border:1px solid #888;
+  font-size:.7rem;line-height:16px;text-align:center;cursor:pointer;
+  display:none;
+}
+.photo:hover .edit-sugar{display:block}
 
 #tools{display:flex;align-items:center;gap:.7rem;margin:1rem 0}
 #subTabs{display:flex;margin-bottom:.8rem}
@@ -88,6 +95,39 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 
 .chartWrap{margin-top:1.2rem}
 canvas{max-width:100%;height:240px!important}
+
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+.modal-content {
+  background-color: #fff;
+  margin: 15% auto;
+  padding: 20px;
+  border-radius: var(--r);
+  width: 80%;
+  max-width: 400px;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.modal-header h3 {
+  margin: 0;
+}
+.close {
+  font-size: 24px;
+  font-weight: bold;
+  cursor: pointer;
+}
 </style>
 </head>
 <body>
@@ -131,6 +171,7 @@ canvas{max-width:100%;height:240px!important}
 
     <div style="color:#666;display:flex;align-items:center;font-size:0.85rem">
       <span>AI 估值中顯示 ⏳，失敗顯示 ⚠️</span>
+      <div id="log" style="color:var(--red);margin-left:auto;font-size:0.8rem"></div>
     </div>
 
     <div id="photosWrap"></div>
@@ -164,6 +205,22 @@ canvas{max-width:100%;height:240px!important}
 </section>
 </main>
 
+<!-- 編輯糖分的彈窗 -->
+<div id="editModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>編輯糖分估算</h3>
+      <span class="close">&times;</span>
+    </div>
+    <img id="editImage" style="width:100%;max-height:200px;object-fit:contain;margin-bottom:10px" alt="食物照片">
+    <p id="editFoodName" style="margin-bottom:10px"></p>
+    <label>糖分 (g/100g)
+      <input id="editSugarValue" type="number" step="0.1" min="0" max="100" style="width:100%;margin-top:5px">
+    </label>
+    <button id="saveSugarBtn" style="background:var(--blue);color:#fff;width:100%;margin-top:15px">確認</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
@@ -179,6 +236,16 @@ const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 
 let model,photos=[],records=[],chart,chartShown=false;
+let currentEditingPhotoIndex = -1;
+
+// 日誌函數
+function log(msg) {
+  console.log(msg);
+  $('log').textContent = msg;
+  setTimeout(() => {
+    $('log').textContent = '';
+  }, 5000);
+}
 
 /* ---------- 初始化 -------------------------------------- */
 window.addEventListener('DOMContentLoaded',async()=>{
@@ -190,16 +257,54 @@ window.addEventListener('DOMContentLoaded',async()=>{
   try {
     const saved = localStorage.getItem('dm_records');
     if (saved) records = JSON.parse(saved);
+    
+    // 處理舊版本可能沒有URL的紀錄
+    records.forEach(record => {
+      if (record.photos) {
+        record.photos.forEach(photo => {
+          if (!photo.url && photo.dataUrl) {
+            photo.url = photo.dataUrl;
+          }
+        });
+      }
+    });
   } catch (e) {
     console.error('加載記錄時出錯', e);
   }
   
+  // 初始化模態框關閉按鈕
+  document.querySelector('.close').onclick = function() {
+    $('editModal').style.display = 'none';
+  };
+  
+  // 點擊模態框外部關閉
+  window.onclick = function(event) {
+    if (event.target == $('editModal')) {
+      $('editModal').style.display = 'none';
+    }
+  };
+  
+  // 保存按鈕事件
+  $('saveSugarBtn').onclick = function() {
+    if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
+      const value = parseFloat($('editSugarValue').value);
+      if (!isNaN(value)) {
+        photos[currentEditingPhotoIndex].sugar = value;
+        photos[currentEditingPhotoIndex].state = 'done';
+        photos[currentEditingPhotoIndex].manual = true; // 標記為手動編輯
+        renderPhotos();
+      }
+    }
+    $('editModal').style.display = 'none';
+  };
+  
   try {
-    model=await mobilenet.load();
-    console.log('AI模型加載完成');
+    log('正在加載AI模型...');
+    model = await mobilenet.load();
+    log('AI模型加載完成！');
   } catch (e) {
     console.error('AI模型加載失敗', e);
-    alert('AI模型加載失敗，某些功能可能無法使用');
+    log('AI模型加載失敗，請重新載入頁面');
   }
   
   toggleInfo();
@@ -255,77 +360,161 @@ async function addFiles(fs){
     if(!f.type.startsWith('image/')) continue;
     
     try {
-      const url=URL.createObjectURL(f);
-      const p={url, state:'loading', sugar:null, file:f.name};
+      const url = URL.createObjectURL(f);
+      const p = {url, state:'loading', sugar:null, file:f.name};
       photos.push(p);
       renderPhotos();
       
       if (model) {
-        predict(p);
+        predict(p, photos.length - 1);
       } else {
         p.state = 'fail';
         renderPhotos();
+        log('AI模型未加載，無法分析食物');
       }
     } catch (e) {
       console.error('處理圖片時出錯', e);
+      log('處理圖片出錯: ' + e.message);
     }
   }
 }
 
 /* ---------- AI + 糖份 ---------------------------------- */
-async function predict(p){
+async function predict(p, index){
   try{
     const img=new Image();
     img.src=p.url;
     await img.decode();
     
-    const [pred]=await model.classify(img);
-    const label=pred.className.split(',')[0];
-    p.sugar=await querySugar(label);
-    p.state=p.sugar!==null?'done':'fail';
-    p.label = label; // 保存食物標籤
+    log('正在分析食物...');
+    const predictions = await model.classify(img);
+    
+    if (predictions && predictions.length > 0) {
+      const [pred] = predictions;
+      const label = pred.className.split(',')[0];
+      log(`識別為: ${label}，正在查詢糖分...`);
+      
+      p.label = label;
+      p.confidence = pred.probability;
+      
+      const sugar = await querySugar(label);
+      p.sugar = sugar;
+      p.state = sugar !== null ? 'done' : 'fail';
+      
+      if (sugar === null) {
+        log(`無法獲取 ${label} 的糖分信息`);
+      } else {
+        log(`${label}: 約含 ${sugar}g 糖分/100g`);
+      }
+    } else {
+      p.state = 'fail';
+      log('無法識別食物');
+    }
   } catch(e) {
     console.error('AI預測失敗', e);
-    p.state='fail';
+    p.state = 'fail';
+    log('分析失敗: ' + e.message);
   }
   
   renderPhotos();
 }
 
 async function querySugar(label){
-  try{
-    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(label)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
-    const proxyUrl = `${WORKER}?url=${encodeURIComponent(url)}`;
+  try {
+    log(`正在從食品資料庫查詢: ${label}`);
+    const targetUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(label)}&search_simple=1&action=process&json=1&page_size=10&fields=nutriments`;
+    const proxyUrl = `${WORKER}/${targetUrl}`;
     
-    const r=await fetch(proxyUrl);
-    if (!r.ok) throw new Error(`HTTP error ${r.status}`);
+    console.log("發送代理請求:", proxyUrl);
     
-    const js=await r.json();
-    const arr=js.products
-      .filter(p=>p.nutriments?.sugars_100g>0)
-      .map(p=>p.nutriments.sugars_100g);
-      
-    return arr.length ? +(arr.reduce((s,v)=>s+v,0)/arr.length).toFixed(1) : null;
+    const response = await fetch(proxyUrl);
+    
+    if (!response.ok) {
+      console.error(`代理請求失敗: ${response.status} ${response.statusText}`);
+      log(`API請求失敗: ${response.status}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log("API響應:", data);
+    
+    if (!data.products || !Array.isArray(data.products)) {
+      console.error("API響應格式錯誤:", data);
+      log("API響應格式錯誤");
+      return null;
+    }
+    
+    // 嘗試使用更寬鬆的篩選條件
+    const validProducts = data.products.filter(p => {
+      return p.nutriments && (
+        p.nutriments.sugars_100g > 0 || 
+        p.nutriments.carbohydrates_100g > 0
+      );
+    });
+    
+    if (validProducts.length === 0) {
+      console.log("未找到含糖分信息的產品");
+      return null;
+    }
+    
+    // 優先使用sugars_100g，如果沒有則使用carbohydrates_100g的30%作為估算值
+    const sugarValues = validProducts.map(p => {
+      if (p.nutriments.sugars_100g > 0) {
+        return p.nutriments.sugars_100g;
+      } else if (p.nutriments.carbohydrates_100g > 0) {
+        return p.nutriments.carbohydrates_100g * 0.3; // 估算值
+      }
+      return 0;
+    });
+    
+    const avgSugar = +(sugarValues.reduce((sum, val) => sum + val, 0) / sugarValues.length).toFixed(1);
+    console.log(`找到 ${validProducts.length} 個產品，平均糖分: ${avgSugar}g/100g`);
+    
+    return avgSugar;
   } catch(e) {
-    console.error('查詢糖分失敗', e, label);
+    console.error('查詢糖分失敗', e);
+    log('查詢糖分時發生錯誤');
     return null;
   }
 }
 
 /* ---------- thumbnails --------------------------------- */
 $('photosWrap').onclick=e=>{
-  const i=e.target.dataset.idx;
-  if(i==null)return;
-  photos.splice(i,1);
-  renderPhotos();
+  // 刪除照片
+  if (e.target.dataset.idx) {
+    const i = parseInt(e.target.dataset.idx);
+    photos.splice(i, 1);
+    renderPhotos();
+    return;
+  }
+  
+  // 編輯糖分
+  if (e.target.dataset.edit) {
+    const i = parseInt(e.target.dataset.edit);
+    openEditModal(i);
+  }
 };
 
+function openEditModal(index) {
+  if (index < 0 || index >= photos.length) return;
+  
+  const photo = photos[index];
+  currentEditingPhotoIndex = index;
+  
+  $('editImage').src = photo.url;
+  $('editFoodName').textContent = photo.label ? `識別為: ${photo.label}` : '未識別';
+  $('editSugarValue').value = photo.sugar || '';
+  
+  $('editModal').style.display = 'block';
+}
+
 function renderPhotos(){
-  $('photosWrap').innerHTML=photos.map((p,i)=>`
+  $('photosWrap').innerHTML = photos.map((p,i) => `
     <div class="photo">
       <img src="${p.url}" alt="食物照片">
       <em>${p.state==='loading' ? '⏳' : p.state==='fail' ? '⚠️' : p.sugar+' g'}</em>
       <span data-idx="${i}">✖</span>
+      <span class="edit-sugar" data-edit="${i}">✏️</span>
     </div>`).join('');
 }
 
@@ -342,20 +531,24 @@ $('form').onsubmit=e=>{
   localStorage.dm_name=$('name').value.trim();
   localStorage.dm_age=$('age').value.trim();
   
+  // 準備儲存圖片的Base64數據
+  const photoData = photos.map(p => ({
+    url: p.url,
+    state: p.state,
+    sugar: p.sugar,
+    label: p.label || '',
+    manual: p.manual || false
+  }));
+  
   // 創建新紀錄
   const newRecord = {
-    id: Date.now(), // 唯一ID用於識別
+    id: Date.now(),
     name: $('name').value.trim(),
     age: $('age').value.trim(),
     date: $('date').value,
     meal: $('meal').value,
     sugarMmol: parseFloat($('sugarMmol').value) || null,
-    photos: photos.map(p => ({
-      url: p.url,
-      state: p.state,
-      sugar: p.sugar,
-      label: p.label || ''
-    })),
+    photos: photoData,
     timestamp: new Date().toISOString()
   };
   
@@ -417,7 +610,7 @@ function buildList(){
       ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
       ${r.photos && r.photos.length ? `<div class="attach">
         ${r.photos.map(p => `<figure><img src="${p.url}" alt="食物照片">
-          <figcaption>${p.label ? p.label + '<br>' : ''}${p.sugar ?? '?'} g</figcaption></figure>`).join('')}
+          <figcaption>${p.label ? `${p.label.slice(0, 10)}${p.label.length > 10 ? '...' : ''}<br>` : ''}${p.sugar ? p.sugar + ' g' : '未知'}</figcaption></figure>`).join('')}
       </div>` : ''}
     </div>`).join('');
 }
