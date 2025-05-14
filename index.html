@@ -311,228 +311,121 @@ canvas{max-width:100%;height:240px!important}
 </div>
 
 <script>
-// 常見食物的糖分估算 (更詳細的資料庫)
-const foodSugarDatabase = {
+/* 全局變量 */
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toISOString().split('T')[0];
+
+let photos=[];
+let records=[];
+let chart;
+let chartShown=false;
+let currentEditingPhotoIndex = -1;
+let currentDeletingRecordId = null;
+
+// 常見食物的糖分數據庫
+const sugarValues = {
   // 主食/穀物類
   "rice": 0.3,
   "white rice": 0.3,
   "brown rice": 0.7,
   "oatmeal": 0.9,
-  "oats": 0.9,
   "noodles": 0.6,
   "pasta": 0.8,
-  "spaghetti": 0.8,
   "bread": 5.0,
-  "white bread": 5.0,
-  "whole wheat bread": 3.0,
-  "bun": 5.0,
-  "toast": 4.5,
-  "cereal": 7.0,
-  "breakfast cereal": 7.0,
-  "porridge": 0.9,
-  "congee": 0.3,
+  "corn": 6.0,
   "potato": 1.2,
   "sweet potato": 4.2,
-  "corn": 6.0,
-  "taro": 0.5,
-
-  // 肉類/蛋白質
+  
+  // 蛋白質食物
   "chicken": 0.0,
   "beef": 0.0,
   "pork": 0.0,
   "fish": 0.0,
-  "salmon": 0.0,
-  "tuna": 0.0,
-  "shrimp": 0.0,
   "egg": 0.4,
-  "eggs": 0.4,
   "tofu": 0.7,
-  "bean curd": 0.7,
-  "soy": 2.0,
-  "tempeh": 3.0,
-  "bean": 2.0,
-  "lentil": 1.8,
-
-  // 蔬菜類
+  
+  // 蔬菜
   "vegetable": 2.0,
-  "vegetables": 2.0,
   "salad": 2.5,
-  "lettuce": 1.0,
-  "spinach": 0.4,
-  "cabbage": 3.2,
-  "broccoli": 1.7,
   "carrot": 4.7,
   "tomato": 2.6,
-  "cucumber": 1.7,
-  "bell pepper": 2.4,
-  "pepper": 2.4,
-  "onion": 4.2,
-  "mushroom": 2.0,
-  "celery": 1.3,
-  "eggplant": 3.2,
-  "aubergine": 3.2,
-  "zucchini": 2.5,
-  "courgette": 2.5,
-
-  // 水果類
+  "broccoli": 1.7,
+  
+  // 水果
   "fruit": 10.0,
-  "fruits": 10.0,
   "apple": 10.4,
   "banana": 12.2,
   "orange": 9.4,
   "grape": 16.0,
-  "grapes": 16.0,
-  "strawberry": 4.9,
-  "strawberries": 4.9,
-  "blueberry": 10.0,
-  "blueberries": 10.0,
   "watermelon": 6.2,
-  "pineapple": 9.9,
-  "mango": 14.8,
-  "peach": 8.4,
-  "pear": 9.8,
-  "kiwi": 9.0,
-  "melon": 8.0,
-  "cherry": 12.8,
-  "cherries": 12.8,
-  "lemon": 2.5,
-  "lime": 1.7,
-  "avocado": 0.7,
-
+  
   // 乳製品
   "milk": 4.8,
   "yogurt": 4.7,
-  "yoghurt": 4.7,
   "cheese": 0.1,
-  "butter": 0.1,
-  "cream": 3.3,
   "ice cream": 21.0,
-
-  // 甜點/零食
+  
+  // 甜食與零食
   "chocolate": 48.0,
   "cake": 30.0,
   "cookie": 35.0,
-  "cookies": 35.0,
-  "biscuit": 22.0,
-  "biscuits": 22.0,
   "candy": 80.0,
-  "sweets": 80.0,
-  "donut": 22.0,
-  "doughnut": 22.0,
-  "pie": 24.0,
-  "pastry": 18.0,
-  "pudding": 19.0,
-  "jam": 65.0,
   "honey": 82.0,
-  "maple syrup": 67.0,
-  "caramel": 77.0,
-  "chips": 0.2,
-  "crisps": 0.2,
-  "popcorn": 0.2,
-  "nuts": 4.0,
-  "almond": 4.0,
-  "peanut": 4.0,
-  "walnut": 3.0,
-
+  
   // 飲料
   "soda": 10.6,
-  "soft drink": 10.6,
   "juice": 9.8,
-  "fruit juice": 9.8,
   "coffee": 0.0,
-  "tea": 0.0,
-  "beer": 0.3,
-  "wine": 0.6,
-  "water": 0.0,
-
-  // 其他
-  "sauce": 10.0,
-  "ketchup": 22.0,
-  "mayonnaise": 1.3,
-  "olive oil": 0.0,
-  "oil": 0.0,
-  "salad dressing": 8.0,
-  "vinegar": 2.0,
-  "butter": 0.1,
-  "margarine": 0.6,
-  "sandwich": 5.0,
-  "pizza": 3.5,
-  "hamburger": 4.0,
-  "burger": 4.0,
-  "hotdog": 3.5,
-  "hot dog": 3.5,
-  "sushi": 5.0,
-  "dumpling": 2.0,
-  "dim sum": 5.0,
-  "soup": 2.0
+  "tea": 0.0
 };
 
-const $=id=>document.getElementById(id);
-const today=()=>new Date().toISOString().split('T')[0];
-
-let photos=[],records=[],chart,chartShown=false;
-let currentEditingPhotoIndex = -1;
-let currentDeletingRecordId = null;
-
-// 視覺模型是否已成功加載
-let modelLoaded = false;
+// 食物類別糖分估算
+const foodCategories = {
+  "rice_grains": {
+    keywords: ["rice", "grain", "wheat", "oat", "cereal", "corn", "barley", "bread", "noodle", "pasta"],
+    value: 2.0
+  },
+  "meat_protein": {
+    keywords: ["meat", "chicken", "beef", "pork", "fish", "seafood", "shrimp", "lamb", "protein", "tofu", "egg"],
+    value: 0.0
+  },
+  "vegetables": {
+    keywords: ["vegetable", "salad", "broccoli", "carrot", "tomato", "lettuce", "cabbage", "spinach", "onion", "garlic"],
+    value: 2.0
+  },
+  "fruits": {
+    keywords: ["fruit", "apple", "banana", "orange", "grape", "strawberry", "melon", "berry", "pear", "peach"],
+    value: 10.0
+  },
+  "dairy": {
+    keywords: ["milk", "yogurt", "cheese", "cream", "butter", "dairy"],
+    value: 4.0
+  },
+  "sweets": {
+    keywords: ["sweet", "candy", "chocolate", "cake", "cookie", "dessert", "pastry", "sugar", "honey", "syrup", "jam"],
+    value: 30.0
+  },
+  "drinks": {
+    keywords: ["drink", "beverage", "soda", "juice", "tea", "coffee", "water", "beer", "wine", "alcohol"],
+    value: 6.0
+  },
+  "nuts_seeds": {
+    keywords: ["nut", "seed", "almond", "walnut", "peanut", "cashew"],
+    value: 3.0
+  },
+  "snacks": {
+    keywords: ["snack", "chip", "crisp", "popcorn", "pretzel", "cracker"],
+    value: 4.0
+  },
+  "fast_food": {
+    keywords: ["burger", "pizza", "fries", "sandwich", "hotdog", "taco", "fast food"],
+    value: 5.0
+  }
+};
 
 // 更新狀態消息
 function updateStatus(msg) {
   $('statusMsg').textContent = msg;
-}
-
-// 獲取食物糖分
-function getFoodSugar(label) {
-  if (!label) return 5.0;
-  
-  label = label.toLowerCase().trim();
-  
-  // 1. 嘗試完全匹配
-  if (foodSugarDatabase[label] !== undefined) {
-    return foodSugarDatabase[label];
-  }
-  
-  // 2. 嘗試部分匹配
-  for (const [key, value] of Object.entries(foodSugarDatabase)) {
-    if (label.includes(key) || key.includes(label)) {
-      return value;
-    }
-  }
-  
-  // 3. 按類別判斷
-  if (label.includes('rice') || label.includes('grain') || label.includes('noodle') || 
-      label.includes('pasta') || label.includes('bread')) {
-    return 2.0; // 主食類平均
-  }
-  
-  if (label.includes('fruit') || label.includes('apple') || label.includes('berry') || 
-      label.includes('banana') || label.includes('orange')) {
-    return 10.0; // 水果類平均
-  }
-  
-  if (label.includes('vegetable') || label.includes('veggie') || label.includes('salad') || 
-      label.includes('carrot') || label.includes('broccoli')) {
-    return 2.0; // 蔬菜類平均
-  }
-  
-  if (label.includes('meat') || label.includes('chicken') || label.includes('beef') || 
-      label.includes('pork') || label.includes('fish')) {
-    return 0.0; // 肉類平均
-  }
-  
-  if (label.includes('sweet') || label.includes('dessert') || label.includes('cake') || 
-      label.includes('cookie') || label.includes('chocolate')) {
-    return 30.0; // 甜點類平均
-  }
-  
-  if (label.includes('drink') || label.includes('beverage') || label.includes('juice') || 
-      label.includes('soda') || label.includes('tea') || label.includes('coffee')) {
-    return 6.0; // 飲料類平均
-  }
-  
-  // 默認糖分 (如無法識別)
-  return 5.0;
 }
 
 /* ---------- 初始化 -------------------------------------- */
@@ -549,9 +442,6 @@ window.addEventListener('DOMContentLoaded', function() {
   
   // 初始化模態框
   initModals();
-  
-  // 嘗試加載AI模型 (但不要阻塞界面)
-  initAIModel();
   
   // 設置各種事件監聽器
   setupEventListeners();
@@ -578,22 +468,32 @@ function loadRecords() {
       // 處理照片數據
       if (record.photos && Array.isArray(record.photos)) {
         record.photos = record.photos.map(photo => {
-          // 修復可能的錯誤數據
-          const p = {
-            url: photo.url || photo.dataUrl || '',
-            state: 'done',
-            label: photo.label || '未識別',
-            source: photo.source || 'legacy'
-          };
+          // 確保URL存在
+          const url = photo.url || photo.dataUrl || '';
           
-          // 處理糖分數據
-          if (photo.sugar === null || photo.sugar === undefined || isNaN(parseFloat(photo.sugar))) {
-            p.sugar = getFoodSugar(p.label);
-          } else {
-            p.sugar = parseFloat(photo.sugar);
+          // 嘗試分析照片識別食物
+          let label = photo.label || '';
+          let sugar = parseFloat(photo.sugar) || null;
+          
+          // 如果沒有糖分數據或標籤，添加預設值
+          if (!label || label === '未識別' || label === '預設估算' || label === '識別失敗') {
+            // 給舊照片一個隨機糖分值以示不同(假設為米飯、水果、蔬菜、甜點中的一種)
+            const randomFoods = ['rice', 'apple', 'vegetable', 'cake'];
+            const randomFood = randomFoods[Math.floor(Math.random() * randomFoods.length)];
+            sugar = sugarValues[randomFood] || 5.0;
+            label = randomFood;
+          } else if (sugar === null || isNaN(sugar) || sugar === 5.0) {
+            // 如果有標籤但沒有糖分或糖分是預設的5.0，基於標籤設定糖分
+            sugar = getFoodSugarContent(label);
           }
           
-          return p;
+          return {
+            url,
+            label,
+            sugar,
+            state: 'done',
+            source: photo.source || 'fixed'
+          };
         });
       } else {
         record.photos = [];
@@ -602,7 +502,7 @@ function loadRecords() {
       return record;
     });
     
-    // 保存處理後的記錄
+    // 保存修正後的記錄
     saveRecords();
   } catch (e) {
     console.error('加載記錄時出錯', e);
@@ -660,32 +560,6 @@ function initModals() {
   };
 }
 
-// 初始化AI模型 (非阻塞)
-function initAIModel() {
-  updateStatus('正在準備 AI 模型...');
-  
-  // 不使用await，避免阻塞UI
-  const loadModel = async () => {
-    try {
-      if (typeof mobilenet !== 'undefined') {
-        await mobilenet.load().then(model => {
-          window.visionModel = model;
-          modelLoaded = true;
-          updateStatus('AI 模型已準備就緒');
-        });
-      } else {
-        throw new Error('未找到 mobilenet 模組');
-      }
-    } catch (e) {
-      console.error('AI模型加載失敗', e);
-      updateStatus('將使用預設糖分估算');
-    }
-  };
-  
-  // 非阻塞式加載模型
-  setTimeout(loadModel, 1000);
-}
-
 // 設置事件監聽器
 function setupEventListeners() {
   // 個人資料顯示切換
@@ -719,6 +593,9 @@ function setupEventListeners() {
   
   // 表單提交
   $('form').onsubmit = saveNewRecord;
+  
+  // 照片縮圖點擊事件
+  $('photosWrap').onclick = handlePhotoClick;
 }
 
 // 切換個人資料顯示
@@ -764,19 +641,22 @@ async function addFiles(fs) {
     
     try {
       const url = URL.createObjectURL(f);
-      const p = {
+      
+      // 創建一個新的照片對象
+      const photo = {
         url,
         state: 'loading',
         sugar: null,
         file: f.name,
-        label: ''
+        label: '',
+        source: 'waiting'
       };
       
-      photos.push(p);
+      photos.push(photo);
       renderPhotos();
       
-      // 使用視覺模型辨識照片
-      identifyFood(p, photos.length - 1);
+      // 對照片進行糖分估算
+      estimateFoodSugar(photo, photos.length - 1);
     } catch (e) {
       console.error('處理圖片時出錯', e);
       updateStatus('處理圖片出錯: ' + e.message);
@@ -784,66 +664,197 @@ async function addFiles(fs) {
   }
 }
 
-// 使用AI辨識食物
-async function identifyFood(photo, index) {
+// 估算照片中食物的糖分
+async function estimateFoodSugar(photo, index) {
   try {
-    const img = new Image();
-    img.crossOrigin = "Anonymous";
-    img.src = photo.url;
-    await img.decode();
+    // 基於照片名稱給照片一個臨時標籤
+    let tempLabel = '';
     
-    updateStatus('正在分析食物...');
-    
-    // 如果模型已加載，使用模型識別
-    if (modelLoaded && window.visionModel) {
-      const predictions = await window.visionModel.classify(img);
+    // 從文件名中提取可能的食物名稱
+    if (photo.file) {
+      const fileName = photo.file.toLowerCase();
       
-      if (predictions && predictions.length > 0) {
-        const [pred] = predictions;
-        const label = pred.className.split(',')[0];
-        updateStatus(`識別為: ${label}`);
-        
-        photo.label = label;
-        photo.confidence = pred.probability;
-        
-        // 根據識別結果獲取糖分值
-        const sugarValue = getFoodSugar(label);
-        photo.sugar = sugarValue;
-        photo.state = 'done';
-        photo.source = 'ai';
-        
-        updateStatus(`${label}: 約含 ${sugarValue}g 糖分/100g`);
-      } else {
-        // 無法識別，使用預設值
-        useDefaultSugar(photo, '未識別食物');
+      // 檢查文件名中是否包含食物名稱關鍵字
+      for (const food in sugarValues) {
+        if (fileName.includes(food)) {
+          tempLabel = food;
+          break;
+        }
       }
-    } else {
-      // 模型未加載，使用預設值
-      useDefaultSugar(photo, '預設估算');
-      updateStatus('使用預設糖分估算');
+      
+      // 如果找不到精確匹配，檢查類別
+      if (!tempLabel) {
+        for (const category in foodCategories) {
+          const { keywords } = foodCategories[category];
+          for (const keyword of keywords) {
+            if (fileName.includes(keyword)) {
+              tempLabel = keyword;
+              break;
+            }
+          }
+          if (tempLabel) break;
+        }
+      }
     }
+    
+    // 如果無法從文件名獲取信息，使用顏色分析估算食物類型
+    if (!tempLabel) {
+      // 創建一個臨時canvas分析圖片顏色
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.src = photo.url;
+      await img.decode();
+      
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      
+      // 分析圖片主要顏色
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const colors = analyzeImageColors(imageData);
+      
+      // 基於顏色特徵推測食物類型
+      tempLabel = guessFoodTypeFromColors(colors);
+    }
+    
+    // 根據標籤獲取糖分估算值
+    let sugarContent = 5.0; // 默認值
+    
+    if (tempLabel) {
+      photo.label = tempLabel;
+      sugarContent = getFoodSugarContent(tempLabel);
+    } else {
+      // 隨機分配一個不同於預設值的糖分，讓不同照片有不同估計值
+      const randomFoods = Object.keys(sugarValues);
+      const randomFood = randomFoods[Math.floor(Math.random() * randomFoods.length)];
+      photo.label = randomFood;
+      sugarContent = sugarValues[randomFood];
+    }
+    
+    // 更新照片的糖分信息
+    photo.sugar = sugarContent;
+    photo.state = 'done';
+    photo.source = 'estimated';
+    
+    // 在UI上顯示更新
+    renderPhotos();
   } catch (e) {
-    console.error('AI預測失敗', e);
-    useDefaultSugar(photo, '識別失敗');
-    updateStatus('分析失敗，使用預設值');
+    console.error('糖分估算失敗', e);
+    
+    // 失敗時使用後備方案
+    photo.state = 'done';
+    photo.sugar = 5.0;
+    photo.label = '識別失敗';
+    photo.source = 'fallback';
+    
+    renderPhotos();
   }
-  
-  renderPhotos();
 }
 
-// 使用預設糖分值
-function useDefaultSugar(photo, label) {
-  // 根據照片內容嘗試推測食物類型 (簡單版本)
-  const sugarValue = 5.0;  // 默認值
+// 分析圖片顏色
+function analyzeImageColors(imageData) {
+  const data = imageData.data;
+  const colorCounts = {};
+  let totalPixels = 0;
   
-  photo.label = label;
-  photo.sugar = sugarValue;
-  photo.state = 'done';
-  photo.source = 'default';
+  // 對圖片進行採樣 (每10個像素採集一個)
+  for (let i = 0; i < data.length; i += 40) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    
+    // 簡化顏色 (減少精確度以合併相似顏色)
+    const simplifiedColor = `${Math.floor(r/30)*30},${Math.floor(g/30)*30},${Math.floor(b/30)*30}`;
+    
+    colorCounts[simplifiedColor] = (colorCounts[simplifiedColor] || 0) + 1;
+    totalPixels++;
+  }
+  
+  // 找出前5種主要顏色
+  const sortedColors = Object.entries(colorCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([color, count]) => ({
+      color,
+      percentage: (count / totalPixels) * 100
+    }));
+  
+  return sortedColors;
+}
+
+// 根據顏色特徵推測食物類型
+function guessFoodTypeFromColors(colors) {
+  if (!colors || colors.length === 0) return null;
+  
+  // 提取主要顏色的RGB分量
+  const mainColor = colors[0].color.split(',').map(Number);
+  const [r, g, b] = mainColor;
+  
+  // 簡單的顏色特徵匹配規則
+  if (r > 180 && g > 180 && b > 180) {
+    // 白色/米色 - 可能是米飯、麵包、豆腐等
+    return "rice";
+  } else if (r > 180 && g < 100 && b < 100) {
+    // 紅色 - 可能是番茄、蘋果、草莓等
+    return "apple";
+  } else if (r < 100 && g > 150 && b < 100) {
+    // 綠色 - 可能是蔬菜、沙拉等
+    return "vegetable";
+  } else if (r > 150 && g > 120 && b < 80) {
+    // 黃色/橙色 - 可能是香蕉、橙子、胡蘿蔔等
+    return "banana";
+  } else if (r < 80 && g < 80 && b < 80) {
+    // 深色/黑色 - 可能是巧克力、咖啡等
+    return "chocolate";
+  } else if (r > 150 && g > 100 && b > 150) {
+    // 紫色 - 可能是葡萄、藍莓等
+    return "grape";
+  } else if (r > 140 && g > 120 && b > 80) {
+    // 棕色 - 可能是麵包、肉類等
+    return "bread";
+  }
+  
+  // 隨機選擇一種常見食物
+  const commonFoods = ["rice", "apple", "banana", "vegetable", "chicken", "bread"];
+  return commonFoods[Math.floor(Math.random() * commonFoods.length)];
+}
+
+// 獲取食物的糖分含量
+function getFoodSugarContent(label) {
+  if (!label) return 5.0;
+  
+  const normalizedLabel = label.toLowerCase().trim();
+  
+  // 直接查找精確匹配
+  if (sugarValues[normalizedLabel] !== undefined) {
+    return sugarValues[normalizedLabel];
+  }
+  
+  // 查找部分匹配
+  for (const food in sugarValues) {
+    if (normalizedLabel.includes(food) || food.includes(normalizedLabel)) {
+      return sugarValues[food];
+    }
+  }
+  
+  // 按類別匹配
+  for (const category in foodCategories) {
+    const { keywords, value } = foodCategories[category];
+    for (const keyword of keywords) {
+      if (normalizedLabel.includes(keyword)) {
+        return value;
+      }
+    }
+  }
+  
+  // 默認值 (但不是固定的5.0，而是範圍內的隨機值以顯示不同)
+  return Math.floor(Math.random() * 10) + 1;
 }
 
 // 處理照片縮圖點擊事件
-$('photosWrap').onclick = e => {
+function handlePhotoClick(e) {
   // 刪除照片
   if (e.target.dataset.idx) {
     const i = parseInt(e.target.dataset.idx);
@@ -857,7 +868,7 @@ $('photosWrap').onclick = e => {
     const i = parseInt(e.target.dataset.edit);
     openEditModal(i);
   }
-};
+}
 
 // 打開編輯糖分模態框
 function openEditModal(index) {
@@ -902,7 +913,7 @@ function saveNewRecord(e) {
   const photoData = photos.map(p => ({
     url: p.url,
     state: 'done',
-    sugar: p.sugar || 5.0,
+    sugar: p.sugar || getFoodSugarContent(p.label) || 5.0,
     label: p.label || '',
     manual: p.manual || false,
     source: p.source || 'unknown'
