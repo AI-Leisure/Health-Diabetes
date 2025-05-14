@@ -7,24 +7,6 @@
      overflow:auto;background:#000d;font:12px/1.4 monospace;color:#0f0;
      z-index:9999;padding:6px 4px;white-space:pre-wrap}
 </style>
-<script>
-(function(){
-  const el=document.createElement('pre');el.id='dbg';document.body.append(el);
-  function print(type,args){
-    el.textContent+=
-      '['+type+'] '+[].map.call(args,a=>typeof a=='object'
-          ?JSON.stringify(a).slice(0,120)
-          :String(a)).join(' ')+'\n';
-    el.scrollTop=el.scrollHeight;
-  }
-  ['log','warn','error'].forEach(k=>{
-    const orig=console[k];
-    console[k]=function(){orig.apply(console,arguments);print(k,arguments)};
-  });
-  window.addEventListener('error',e=>print('EX', [e.message]));
-})();
-</script>
-
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -335,4 +317,21 @@ function renderChart(){
 }
 </script>
 </body>
+      <script>
+(function(){
+  const el=document.createElement('pre');el.id='dbg';document.body.append(el);
+  function print(type,args){
+    el.textContent+=
+      '['+type+'] '+[].map.call(args,a=>typeof a=='object'
+          ?JSON.stringify(a).slice(0,120)
+          :String(a)).join(' ')+'\n';
+    el.scrollTop=el.scrollHeight;
+  }
+  ['log','warn','error'].forEach(k=>{
+    const orig=console[k];
+    console[k]=function(){orig.apply(console,arguments);print(k,arguments)};
+  });
+  window.addEventListener('error',e=>print('EX', [e.message]));
+})();
+</script>
 </html>
