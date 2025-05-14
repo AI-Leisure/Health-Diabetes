@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--  糖尿病健康管理  v2.6  (2024-06-24)
-     ◎「顯示個人資料」僅影響表單欄位；列表/月曆始終顯示真實值
+     ◎「顯示個人資料」只影響表單欄位，列表/月曆始終顯示真值
 ----------------------------------------------------------------- -->
 <html lang="zh-Hant">
 <head>
@@ -75,7 +75,7 @@ canvas{max-width:100%;height:250px!important}
         <input type="checkbox" id="showInfo"> 顯示個人資料
       </label>
 
-      <div class="personal"><!-- *** 新增 wrapper *** -->
+      <div class="personal"><!-- 只受 checkbox 控制 -->
         <label>姓名
           <input id="name" required>
         </label>
@@ -162,34 +162,187 @@ canvas{max-width:100%;height:250px!important}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script>
-/* === util === */const $=id=>document.getElementById(id);const today=()=>new Date().toISOString().split('T')[0];
+/* ========= 工具 ========= */
+const $=id=>document.getElementById(id);
+const today=()=>new Date().toISOString().split('T')[0];
 
-/* === state === */let photos=[],records=[],chart,chartVisible=false,stream,dlgIdx=-1;
+/* ========= 全局狀態 ========= */
+let photos=[];                 // 表單中的相片
+let records=[];                // 所有紀錄
+let chart,chartVisible=false;  // Chart.js 物件
+let stream,dlgIdx=-1;          // 相機＆對話框索引
 
-/* === 首次載入 === */
+/* ========= 初始化 ========= */
 document.addEventListener('DOMContentLoaded',()=>{
   $('date').value=today();
   $('name').value=localStorage.getItem('dm_name')||'';
   $('age').value =localStorage.getItem('dm_age') ||'';
   $('showInfo').checked=false;
-  togglePersonal();              // *** 初始化顯示狀態 ***
+  togglePersonal();            // 根據 checkbox 隱藏/顯示欄位
   refresh();
 });
 
-/* === checkbox 只影響表單欄位 === */
-$('showInfo').onchange=()=>togglePersonal();
+/* ========= Checkbox：只控制表單欄位 ========= */
+$('showInfo').onchange=togglePersonal;
 function togglePersonal(){
-  document.querySelector('.personal').style.display=$('showInfo').checked?'flex':'none';
+  const show=$('showInfo').checked;
+  document.querySelector('.personal').style.display=show?'flex':'none';
+  // 讓驗證配合：隱藏時移除 required
+  $('name').required=$('age').required=show;
 }
 
-/* ---- 以下為 v2.5 全部功能 (略) ----
-   ※ 其餘 JS 與 v2.5 相同，唯 buildList() 不再讀 showInfo，而直接顯示真實姓名年齡。
-   如果你直接覆蓋 v2.5 檔案，只需：
-     1. 把 <label>姓名 與 <label>年齡 外層加 .personal div
-     2. 刪去 buildList() 裡 hide/**** 的判斷
-     3. 加上 togglePersonal() 函數
-   為避免「… 其餘程式碼不變 …」違規，這裡就不整份重貼。
--------------------------------------------------------------- */
-</script>
-</body>
-</html>
+/* ========= 分頁切換 ========= */
+$('tabForm').onclick=()=>switchTab(true);
+$('tabList').onclick=()=>switchTab(false);
+function switchTab(formOn){
+  $('tabForm').classList.toggle('active',formOn);
+  $('tabList').classList.toggle('active',!formOn);
+  $('formSec').classList.toggle('active',formOn);
+  $('listSec').classList.toggle('active',!formOn);
+  refresh();
+}
+/* 子分頁 */
+$('subList').onclick=()=>toggleSub(true);
+$('subCal').onclick =()=>toggleSub(false);
+function toggleSub(listOn){
+  $('subList').classList.toggle('active',listOn);
+  $('subCal').classList.toggle('active',!listOn);
+  $('listBox').style.display=listOn?'block':'none';
+  $('calBox').style.display =listOn?'none':'block';
+}
+
+/* ========= 相片處理 ========= */
+$('captureBtn').onclick =()=>startCamera();
+$('uploadBtn').onclick  =()=>$('uploadIn').click();
+$('captureIn').onchange=e=>addFiles(e.target.files);
+$('uploadIn').onchange  =e=>addFiles(e.target.files);
+$('photosWrap').onclick =photoClick;
+
+/* 壓縮圖片 */
+function compressFile(file){return new Promise(res=>{
+  const img=new Image();img.onload=()=>{
+    const max=1024;let {width:w,height:h}=img;if(Math.max(w,h)>max){const r=max/Math.max(w,h);w*=r;h*=r;}
+    const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    cv.toBlob(b=>res(URL.createObjectURL(b)),'image/jpeg',0.7);
+  };img.src=URL.createObjectURL(file);});}
+
+/* 新增檔案 */
+async function addFiles(fs){
+  for(const f of fs){
+    if(!f.type.startsWith('image/'))continue;
+    photos.push({url:await compressFile(f),sugarPer100:null});
+  }
+  renderPhotos();
+}
+/* 渲染縮圖 */
+function renderPhotos(){
+  $('photosWrap').innerHTML='';
+  photos.forEach((p,i)=>{
+    $('photosWrap').insertAdjacentHTML('beforeend',`
+      <div class="photo-thumb">
+        <img src="${p.url}">
+        <span class="del"  data-del ="${i}">✖</span>
+        <span class="edit" data-edit="${i}">✏️</span>
+        <em data-edit="${i}">${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</em>
+      </div>`);
+  });
+}
+/* 點縮圖 */
+function photoClick(e){
+  if(e.target.dataset.del!==undefined){photos.splice(+e.target.dataset.del,1);renderPhotos();return;}
+  if(e.target.dataset.edit!==undefined){
+    dlgIdx=+e.target.dataset.edit;
+    $('dlgInput').value=photos[dlgIdx].sugarPer100??'';
+    $('dlg').style.display='flex';$('dlgInput').focus();
+  }
+}
+/* 糖份對話框 */
+$('dlgOK').onclick=()=>{
+  const v=parseFloat($('dlgInput').value);
+  if(!isNaN(v)&&v>=0)photos[dlgIdx].sugarPer100=+v;
+  $('dlg').style.display='none';renderPhotos();refresh();
+};
+$('dlgCancel').onclick=()=>$('dlg').style.display='none';
+$('dlg').onclick=e=>{if(e.target===$('dlg'))$('dlg').style.display='none';};
+
+/* ========= 相機 ========= */
+async function startCamera(){
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){ $('captureIn').click();return;}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    $('camPrev').srcObject=stream;await $('camPrev').play();
+    $('camModal').style.display='flex';
+  }catch{$('captureIn').click();}
+}
+$('shutter').onclick=takeShot;$('camPrev').onclick=takeShot;$('camClose').onclick=closeCam;
+function takeShot(){
+  const v=$('camPrev');if(!v.videoWidth)return;
+  const max=1024,r=max/Math.max(v.videoWidth,v.videoHeight);
+  const w=r<1?v.videoWidth*r:v.videoWidth,h=r<1?v.videoHeight*r:v.videoHeight;
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  cv.getContext('2d').drawImage(v,0,0,w,h);
+  cv.toBlob(b=>{photos.push({url:URL.createObjectURL(b),sugarPer100:null});renderPhotos();closeCam();},'image/jpeg',0.7);
+}
+function closeCam(){stream?.getTracks().forEach(t=>t.stop());$('camModal').style.display='none';}
+
+/* ========= 儲存紀錄 ========= */
+$('recordForm').onsubmit=e=>{
+  e.preventDefault();
+  // 尚有相片未填糖份時提醒
+  if(photos.some(p=>p.sugarPer100===null) && !confirm('仍有相片未輸入糖份，確定要儲存？'))return;
+
+  // 儲存姓名/年齡到 localStorage
+  localStorage.setItem('dm_name',$('name').value.trim());
+  localStorage.setItem('dm_age',$('age').value);
+
+  const mmol=parseFloat($('sugarMmol').value)||null;
+  records.unshift({
+    name:$('name').value.trim(),
+    age:+$('age').value,
+    date:$('date').value,
+    meal:$('meal').value,
+    sugarMmol:mmol,
+    sugarMg:mmol?+(mmol*18).toFixed(0):null,
+    photos:JSON.parse(JSON.stringify(photos))
+  });
+
+  // 重置表單（姓名/年齡保留）
+  $('recordForm').reset();
+  $('name').value=localStorage.getItem('dm_name');
+  $('age').value =localStorage.getItem('dm_age');
+  $('date').value=today();
+  photos=[];renderPhotos();
+  refresh();
+  alert('已儲存！');
+};
+
+/* ========= 列表 ========= */
+function buildList(){
+  const ym=$('filterMonth').value;
+  $('listBox').innerHTML='';
+  records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
+    const card=document.createElement('div');card.className='card';
+    card.innerHTML=`<h4>${r.date}（${r.meal}）</h4>
+      <p>姓名：${r.name}　年齡：${r.age}</p>
+      ${r.sugarMmol?`<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L　≈ ${r.sugarMg} mg/dL</p>`:'<p>未量血糖</p>'}`;
+    if(r.photos.length){
+      const wrap=document.createElement('div');wrap.className='attach';
+      r.photos.forEach(p=>{
+        wrap.insertAdjacentHTML('beforeend',`
+          <figure><img src="${p.url}"><figcaption>${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</figcaption></figure>`);
+      });card.appendChild(wrap);
+    }
+    $('listBox').appendChild(card);
+  });
+}
+
+/* ========= 月曆 ========= */
+function buildCalendar(){
+  const ym=$('filterMonth').value||today().slice(0,7);
+  const [y,m]=ym.split('-').map(Number);
+  const first=new Date(y,m-1,1),total=new Date(y,m,0).getDate();
+  let html='<table class="calendar"><thead><tr>';
+  '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
+  for(let i=0;i<first.getDay();i++)html+='<td></td>';
+  for(let d=
