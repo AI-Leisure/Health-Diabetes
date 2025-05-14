@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<!--  糖尿病健康管理  v2.3  (2024-06-21)
-     • 血糖欄位改 mmol/L
-     • 隱藏姓名年齡真正生效
-     • 相片 caption 必定顯示，字體 0.9rem 粗體
+<!--  糖尿病健康管理  v2.4  (2024-06-22)
+     • 日期欄自動填今天
+     • 隱藏姓名/年齡完全生效
+     • 相片糖份 ? g → 只要輸入後即會更新
 -->
 <html lang="zh-Hant">
 <head>
@@ -53,7 +53,7 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
 .chartWrap{margin-top:1.5rem}
 canvas{max-width:100%}
 
-/* ===== Modal (Camera & Sugar-input) ============================================================ */
+/* === Modal（相機 + 糖份輸入） ======================================== */
 #camModal,#dlg{position:fixed;inset:0;background:#0008;display:none;justify-content:center;align-items:center;z-index:99}
 #camModal video{width:100vw;height:100vh;object-fit:cover}
 #camModal button{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:#fff4;font-size:0}
@@ -99,17 +99,17 @@ canvas{max-width:100%}
         <input id="sugarMmol" type="number" min="1" max="40" step="0.1">
       </label>
 
-      <!-- 相片 --------------------------------------------------------------- -->
+      <!-- 相片 -->
       <label class="inline">拍照
         <button id="captureBtn" type="button">📷 拍照</button>
-        <input id="captureIn" type="file" accept="image/jpeg" capture="environment" style="display:none">
+        <input id="captureIn" type="file" accept="image/jpeg" capture="environment" hidden>
       </label>
 
       <label class="inline">上載食物照片
         <button id="uploadBtn" type="button">📑 選擇檔案</button>
-        <input id="uploadIn" type="file" accept="image/*" multiple style="display:none">
+        <input id="uploadIn" type="file" accept="image/*" multiple hidden>
       </label>
-      <small style="color:#666">點 ✏️ 輸入每 100 g 含糖 (g)，點 ✖ 刪除相片。</small>
+      <small style="color:#666">點 ✏️ 輸入每 100 g 含糖 (g)；點 ✖ 刪除相片。</small>
 
       <div id="photosWrap"></div>
 
@@ -162,34 +162,69 @@ canvas{max-width:100%}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-/* -------------- 變數 / DOM 快捷 ---------------- */
-let photos=[], records=[], chart, chartVisible=false, stream, dlgIdx=-1;
+/* === 公用 === */
 const $=id=>document.getElementById(id);
-const sugarField=$('sugarMmol');
+function today(){return new Date().toISOString().split('T')[0];}
 
-/* -------------- 分頁切換 ---------------- */
-function showForm(b){$('tabForm').classList.toggle('active',b);$('tabList').classList.toggle('active',!b);
-  $('formSec').classList.toggle('active',b);$('listSec').classList.toggle('active',!b);refresh();}
-$('tabForm').onclick=()=>showForm(true);$('tabList').onclick=()=>showForm(false);
-function showSub(listOn){$('subList').classList.toggle('active',listOn);$('subCal').classList.toggle('active',!listOn);
-  $('listBox').style.display=listOn?'block':'none';$('calBox').style.display=listOn?'none':'block';refresh();}
-$('subList').onclick=()=>showSub(true);$('subCal').onclick=()=>showSub(false);
+/* === 初期設定 === */
+document.addEventListener('DOMContentLoaded',()=>{
+  $('date').value=today();     // 今天
+  $('showInfo').checked=false; // 預設隱藏
+  refresh();
+});
 
-/* -------------- 相片新增 / 編輯 / 刪除 ---------- */
-$('captureBtn').onclick=()=>handleCapture();
-$('uploadBtn').onclick=()=>$('uploadIn').click();
-$('captureIn').onchange=e=>addFiles(e.target.files);
-$('uploadIn').onchange =e=>addFiles(e.target.files);
-$('photosWrap').onclick=e=>{
-  if(e.target.dataset.del){photos.splice(+e.target.dataset.del,1);renderPhotos();}
-  else if(e.target.dataset.edit){dlgIdx=+e.target.dataset.edit;$('dlgInput').value=photos[dlgIdx].sugarPer100??'';$('dlg').style.display='flex';$('dlgInput').focus();}
-};
-$('dlgOK').onclick=()=>{const v=parseFloat($('dlgInput').value);if(!isNaN(v)&&v>=0)photos[dlgIdx].sugarPer100=+v;
-  $('dlg').style.display='none';renderPhotos();};
-$('dlgCancel').onclick=()=>$('dlg').style.display='none';
-$('dlg').onclick=e=>{if(e.target=== $('dlg'))$('dlg').style.display='none';};
+/* === 全局資料 === */
+let photos=[];        // 當前表單相片
+let records=[];       // 紀錄陣列
+let chart,chartVisible=false,stream,dlgIdx=-1;
 
-/* -------------- 相片渲染 ---------------- */
+/* === 分頁 / 子分頁 === */
+$('tabForm').onclick=()=>switchTab(true);
+$('tabList').onclick=()=>switchTab(false);
+function switchTab(formOn){
+  $('tabForm').classList.toggle('active',formOn);
+  $('tabList').classList.toggle('active',!formOn);
+  $('formSec').classList.toggle('active',formOn);
+  $('listSec').classList.toggle('active',!formOn);
+  refresh();
+}
+
+$('subList').onclick=()=>toggleSub(true);
+$('subCal').onclick =()=>toggleSub(false);
+function toggleSub(listOn){
+  $('subList').classList.toggle('active',listOn);
+  $('subCal').classList.toggle('active',!listOn);
+  $('listBox').style.display=listOn?'block':'none';
+  $('calBox').style.display =listOn?'none':'block';
+  refresh();
+}
+
+/* === 顯示／隱藏個資 === */
+$('showInfo').onchange=refresh;
+
+/* === 相片處理 === */
+$('captureBtn').onclick  =()=>handleCapture();
+$('uploadBtn').onclick   =()=>$('uploadIn').click();
+$('captureIn').onchange  =e=>addFiles(e.target.files);
+$('uploadIn').onchange   =e=>addFiles(e.target.files);
+$('photosWrap').onclick  =photoClick;
+
+async function addFiles(fileList){
+  for(const f of fileList){
+    if(!f.type.startsWith('image/'))continue;
+    photos.push({url:await compressFile(f),sugarPer100:null});
+  }
+  renderPhotos();
+}
+function compressFile(file){return new Promise(res=>{
+  const img=new Image();img.onload=()=>{
+    const max=1024;let w=img.width,h=img.height;
+    if(Math.max(w,h)>max){const r=max/Math.max(w,h);w*=r;h*=r;}
+    const c=document.createElement('canvas');c.width=w;c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    c.toBlob(b=>res(URL.createObjectURL(b)),'image/jpeg',0.7);
+  };img.src=URL.createObjectURL(file);});}
+
 function renderPhotos(){
   $('photosWrap').innerHTML='';
   photos.forEach((p,i)=>{
@@ -198,44 +233,51 @@ function renderPhotos(){
         <img src="${p.url}">
         <span class="del"  data-del ="${i}">✖</span>
         <span class="edit" data-edit="${i}">✏️</span>
-        <em>${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</em>
+        <em>${p.sugarPer100!==null? p.sugarPer100+' g':'? g'}</em>
       </div>`);
   });
 }
-
-/* -------------- 新增檔案（壓縮） -------------- */
-async function addFiles(fs){
-  for(const f of fs){
-    if(!f.type.startsWith('image/'))continue;
-    const url=await compress(f);
-    photos.push({url,sugarPer100:null});
-  }renderPhotos();
+function photoClick(e){
+  if(e.target.dataset.del!==undefined){photos.splice(+e.target.dataset.del,1);renderPhotos();return;}
+  if(e.target.dataset.edit!==undefined){
+    dlgIdx=+e.target.dataset.edit;
+    $('dlgInput').value=photos[dlgIdx].sugarPer100??'';
+    $('dlg').style.display='flex';$('dlgInput').focus();
+  }
 }
-function compress(file){return new Promise(r=>{
-  const img=new Image();img.onload=()=>{
-    let {width:w,height:h}=img;const max=1024;if(Math.max(w,h)>max){const k=max/Math.max(w,h);w*=k;h*=k;}
-    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-    c.toBlob(b=>r(URL.createObjectURL(b)),'image/jpeg',0.7);
-  };img.src=URL.createObjectURL(file);});}
+$('dlgOK').onclick=()=>{
+  const v=parseFloat($('dlgInput').value);
+  if(!isNaN(v)&&v>=0)photos[dlgIdx].sugarPer100=+v;
+  $('dlg').style.display='none';renderPhotos();refresh();
+};
+$('dlgCancel').onclick=()=>$('dlg').style.display='none';
+$('dlg').onclick=e=>{if(e.target===$('dlg'))$('dlg').style.display='none';};
 
-/* -------------- camera -------------- */
+/* === 相機 === */
 async function handleCapture(){
   if(location.protocol!=='https:'&&location.hostname!=='localhost'){ $('captureIn').click();return;}
-  try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    $('camPrev').srcObject=stream;await $('camPrev').play();$('camModal').style.display='flex';}
-  catch{$('captureIn').click();}
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    $('camPrev').srcObject=stream;await $('camPrev').play();
+    $('camModal').style.display='flex';
+  }catch{$('captureIn').click();}
 }
 $('shutter').onclick=takeShot;$('camPrev').onclick=takeShot;$('camClose').onclick=closeCam;
-function takeShot(){const v=$('camPrev');if(!v.videoWidth)return;
-  const max=1024,r=max/Math.max(v.videoWidth,v.videoHeight);const w=r<1?v.videoWidth*r:v.videoWidth,h=r<1?v.videoHeight*r:v.videoHeight;
-  const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(v,0,0,w,h);
-  c.toBlob(b=>{photos.push({url:URL.createObjectURL(b),sugarPer100:null});renderPhotos();closeCam();},'image/jpeg',0.7);}
+function takeShot(){
+  const v=$('camPrev');if(!v.videoWidth)return;
+  const max=1024,r=max/Math.max(v.videoWidth,v.videoHeight);
+  const w=r<1?v.videoWidth*r:v.videoWidth,h=r<1?v.videoHeight*r:v.videoHeight;
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  c.getContext('2d').drawImage(v,0,0,w,h);
+  c.toBlob(b=>{photos.push({url:URL.createObjectURL(b),sugarPer100:null});
+    renderPhotos();closeCam();},'image/jpeg',0.7);
+}
 function closeCam(){stream?.getTracks().forEach(t=>t.stop());$('camModal').style.display='none';}
 
-/* -------------- 儲存紀錄 ---------------- */
+/* === 儲存紀錄 === */
 $('recordForm').onsubmit=e=>{
   e.preventDefault();
-  const mmol=parseFloat(sugarField.value)||null;
+  const mmol=parseFloat($('sugarMmol').value)||null;
   records.unshift({
     name:$('name').value.trim(),
     age:+$('age').value,
@@ -245,31 +287,33 @@ $('recordForm').onsubmit=e=>{
     sugarMg:mmol?+(mmol*18).toFixed(0):null,
     photos:JSON.parse(JSON.stringify(photos))
   });
-  e.target.reset();photos=[];renderPhotos();$('date').value=new Date().toISOString().split('T')[0];
+  e.target.reset();photos=[];renderPhotos();$('date').value=today();
   refresh();alert('已儲存！');
 };
 
-/* -------------- 列表 ---------------- */
+/* === 列表 === */
 function buildList(){
-  const ym=$('filterMonth').value,show=$('showInfo').checked;$('listBox').innerHTML='';
+  const ym=$('filterMonth').value, showFlag=$('showInfo').checked;
+  $('listBox').innerHTML='';
   records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
     const card=document.createElement('div');card.className='card';
     card.innerHTML=`<h4>${r.date}（${r.meal}）</h4>
-       <p>姓名：${show?r.name:'****'}　年齡：${show?r.age:'**'}</p>
-       ${r.sugarMmol?`<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L　≈ ${r.sugarMg} mg/dL</p>`:'<p>未量血糖</p>'}`;
+      <p>姓名：${showFlag?r.name:'****'}　年齡：${showFlag?r.age:'**'}</p>
+      ${r.sugarMmol?`<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L　≈ ${r.sugarMg} mg/dL</p>`:'<p>未量血糖</p>'}`;
     if(r.photos.length){
       const wrap=document.createElement('div');wrap.className='attach';
       r.photos.forEach(p=>{
         wrap.insertAdjacentHTML('beforeend',`
           <figure><img src="${p.url}"><figcaption>${p.sugarPer100!==null?p.sugarPer100+' g':'? g'}</figcaption></figure>`);
       });card.appendChild(wrap);
-    }$('listBox').appendChild(card);
+    }
+    $('listBox').appendChild(card);
   });
 }
 
-/* -------------- 月曆 ---------------- */
+/* === 月曆 === */
 function buildCalendar(){
-  const ym=$('filterMonth').value||new Date().toISOString().slice(0,7);
+  const ym=$('filterMonth').value||today().slice(0,7);
   const [y,m]=ym.split('-').map(Number);const first=new Date(y,m-1,1),total=new Date(y,m,0).getDate();
   let html='<table class="calendar"><thead><tr>'; '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
   for(let i=0;i<first.getDay();i++)html+='<td></td>';
@@ -280,11 +324,11 @@ function buildCalendar(){
     html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>Avg:${avg?avg.toFixed(1)+'g':''}`:''}</td>`;
     if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
   }
-  const rest=(first.getDay()+total)%7;if(rest)for(let i=0;i<7-rest;i++)html+='<td></td>';
+  const rest=(first.getDay()+total)%7;if(rest)html+='<td colspan="'+(7-rest)+'"></td>';
   html+='</tr></tbody></table>';$('calBox').innerHTML=html;
 }
 
-/* -------------- 圖表 ---------------- */
+/* === 圖表 === */
 function buildChart(){
   if(!chartVisible){$('chartWrap').style.display='none';return;}
   const rows=records.filter(r=>(!$('filterMonth').value||r.date.startsWith($('filterMonth').value))&&r.sugarMg);
@@ -295,12 +339,15 @@ function buildChart(){
       borderColor:'#d32f2f',backgroundColor:'#d32f2f33',tension:.25,pointRadius:4,pointBackgroundColor:'#d32f2f'}]},
     options:{scales:{y:{beginAtZero:false}}}});
 }
-function toggleChart(){if(!chartVisible&&records.every(r=>!r.sugarMg)){alert('目前沒有數據');return;}
-  chartVisible=!chartVisible;$('toggleChart').textContent=chartVisible?'隱藏圖表':'分析圖表';buildChart();}
+$('toggleChart').onclick=()=>{
+  if(!chartVisible&&records.every(r=>!r.sugarMg)){alert('目前沒有數據');return;}
+  chartVisible=!chartVisible;
+  $('toggleChart').textContent=chartVisible?'隱藏圖表':'分析圖表';
+  buildChart();
+};
 
-/* -------------- refresh ---------------- */
+/* === refresh === */
 function refresh(){buildList();buildCalendar();if(chartVisible)buildChart();}
-$('showInfo').checked=false;refresh();   // 首次渲染
 </script>
 </body>
 </html>
