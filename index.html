@@ -163,15 +163,10 @@ canvas{max-width:100%;height:240px!important}
   max-height: 90vh;
 }
 
-.debug {
-  margin-top: 10px;
-  padding: 10px;
-  background: #f5f5f5;
-  border: 1px solid #ddd;
-  border-radius: var(--r);
+.status-msg {
+  margin-top: 5px;
+  color: #666;
   font-size: 0.8rem;
-  white-space: pre-wrap;
-  display: none;
 }
 </style>
 </head>
@@ -214,10 +209,7 @@ canvas{max-width:100%;height:240px!important}
       <input id="fileIn" type="file" accept="image/*" multiple hidden>
     </label>
 
-    <div style="color:#666;display:flex;align-items:center;font-size:0.85rem">
-      <span>AI 估值中顯示 ⏳，失敗顯示 ⚠️</span>
-      <div id="log" style="color:var(--red);margin-left:auto;font-size:0.8rem"></div>
-    </div>
+    <div id="statusMsg" class="status-msg">AI 估值中顯示 ⏳，失敗顯示 ⚠️</div>
 
     <div id="photosWrap"></div>
 
@@ -318,169 +310,309 @@ canvas{max-width:100%;height:240px!important}
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.2.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-
 <script>
-/* =========================================================
-   使用提供的 Cloudflare Worker 代理
-   ========================================================= */
-const WORKER = 'https://off-proxy.leisure9654.workers.dev';
-/* --------------------------------------------------------- */
+// 常見食物的糖分估算 (更詳細的資料庫)
+const foodSugarDatabase = {
+  // 主食/穀物類
+  "rice": 0.3,
+  "white rice": 0.3,
+  "brown rice": 0.7,
+  "oatmeal": 0.9,
+  "oats": 0.9,
+  "noodles": 0.6,
+  "pasta": 0.8,
+  "spaghetti": 0.8,
+  "bread": 5.0,
+  "white bread": 5.0,
+  "whole wheat bread": 3.0,
+  "bun": 5.0,
+  "toast": 4.5,
+  "cereal": 7.0,
+  "breakfast cereal": 7.0,
+  "porridge": 0.9,
+  "congee": 0.3,
+  "potato": 1.2,
+  "sweet potato": 4.2,
+  "corn": 6.0,
+  "taro": 0.5,
+
+  // 肉類/蛋白質
+  "chicken": 0.0,
+  "beef": 0.0,
+  "pork": 0.0,
+  "fish": 0.0,
+  "salmon": 0.0,
+  "tuna": 0.0,
+  "shrimp": 0.0,
+  "egg": 0.4,
+  "eggs": 0.4,
+  "tofu": 0.7,
+  "bean curd": 0.7,
+  "soy": 2.0,
+  "tempeh": 3.0,
+  "bean": 2.0,
+  "lentil": 1.8,
+
+  // 蔬菜類
+  "vegetable": 2.0,
+  "vegetables": 2.0,
+  "salad": 2.5,
+  "lettuce": 1.0,
+  "spinach": 0.4,
+  "cabbage": 3.2,
+  "broccoli": 1.7,
+  "carrot": 4.7,
+  "tomato": 2.6,
+  "cucumber": 1.7,
+  "bell pepper": 2.4,
+  "pepper": 2.4,
+  "onion": 4.2,
+  "mushroom": 2.0,
+  "celery": 1.3,
+  "eggplant": 3.2,
+  "aubergine": 3.2,
+  "zucchini": 2.5,
+  "courgette": 2.5,
+
+  // 水果類
+  "fruit": 10.0,
+  "fruits": 10.0,
+  "apple": 10.4,
+  "banana": 12.2,
+  "orange": 9.4,
+  "grape": 16.0,
+  "grapes": 16.0,
+  "strawberry": 4.9,
+  "strawberries": 4.9,
+  "blueberry": 10.0,
+  "blueberries": 10.0,
+  "watermelon": 6.2,
+  "pineapple": 9.9,
+  "mango": 14.8,
+  "peach": 8.4,
+  "pear": 9.8,
+  "kiwi": 9.0,
+  "melon": 8.0,
+  "cherry": 12.8,
+  "cherries": 12.8,
+  "lemon": 2.5,
+  "lime": 1.7,
+  "avocado": 0.7,
+
+  // 乳製品
+  "milk": 4.8,
+  "yogurt": 4.7,
+  "yoghurt": 4.7,
+  "cheese": 0.1,
+  "butter": 0.1,
+  "cream": 3.3,
+  "ice cream": 21.0,
+
+  // 甜點/零食
+  "chocolate": 48.0,
+  "cake": 30.0,
+  "cookie": 35.0,
+  "cookies": 35.0,
+  "biscuit": 22.0,
+  "biscuits": 22.0,
+  "candy": 80.0,
+  "sweets": 80.0,
+  "donut": 22.0,
+  "doughnut": 22.0,
+  "pie": 24.0,
+  "pastry": 18.0,
+  "pudding": 19.0,
+  "jam": 65.0,
+  "honey": 82.0,
+  "maple syrup": 67.0,
+  "caramel": 77.0,
+  "chips": 0.2,
+  "crisps": 0.2,
+  "popcorn": 0.2,
+  "nuts": 4.0,
+  "almond": 4.0,
+  "peanut": 4.0,
+  "walnut": 3.0,
+
+  // 飲料
+  "soda": 10.6,
+  "soft drink": 10.6,
+  "juice": 9.8,
+  "fruit juice": 9.8,
+  "coffee": 0.0,
+  "tea": 0.0,
+  "beer": 0.3,
+  "wine": 0.6,
+  "water": 0.0,
+
+  // 其他
+  "sauce": 10.0,
+  "ketchup": 22.0,
+  "mayonnaise": 1.3,
+  "olive oil": 0.0,
+  "oil": 0.0,
+  "salad dressing": 8.0,
+  "vinegar": 2.0,
+  "butter": 0.1,
+  "margarine": 0.6,
+  "sandwich": 5.0,
+  "pizza": 3.5,
+  "hamburger": 4.0,
+  "burger": 4.0,
+  "hotdog": 3.5,
+  "hot dog": 3.5,
+  "sushi": 5.0,
+  "dumpling": 2.0,
+  "dim sum": 5.0,
+  "soup": 2.0
+};
 
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 
-let model,photos=[],records=[],chart,chartShown=false;
+let photos=[],records=[],chart,chartShown=false;
 let currentEditingPhotoIndex = -1;
 let currentDeletingRecordId = null;
 
-// 常見食物的糖分估算 (作為後備)
-const commonFoodSugar = {
-  "rice": 0.3, // 米飯約含0.3g糖/100g
-  "noodle": 0.6, // 麵食約含0.6g糖/100g
-  "potato": 1.2, // 馬鈴薯約含1.2g糖/100g
-  "sweet potato": 4.2, // 番薯約含4.2g糖/100g
-  "bread": 5.0, // 麵包約含5g糖/100g
-  "apple": 10.4, // 蘋果約含10.4g糖/100g
-  "banana": 12.2, // 香蕉約含12.2g糖/100g
-  "orange": 9.4, // 橙子約含9.4g糖/100g
-  "grape": 16.0, // 葡萄約含16g糖/100g
-  "watermelon": 6.2, // 西瓜約含6.2g糖/100g
-  "milk": 4.8, // 牛奶約含4.8g糖/100g
-  "yogurt": 4.7, // 優格約含4.7g糖/100g
-  "ice cream": 21.0, // 冰淇淋約含21g糖/100g
-  "chocolate": 48.0, // 巧克力約含48g糖/100g
-  "cake": 30.0, // 蛋糕約含30g糖/100g
-  "cookie": 35.0, // 餅乾約含35g糖/100g
-  "soda": 10.6, // 汽水約含10.6g糖/100ml
-  "juice": 9.8, // 果汁約含9.8g糖/100ml
-  "coffee": 0.0, // 純咖啡不含糖
-  "tea": 0.0, // 純茶不含糖
-  "beer": 0.3, // 啤酒約含0.3g糖/100ml
-  "wine": 0.6, // 葡萄酒約含0.6g糖/100ml
-  "egg": 0.4, // 雞蛋約含0.4g糖/100g
-  "chicken": 0.0, // 雞肉基本不含糖
-  "beef": 0.0, // 牛肉基本不含糖
-  "pork": 0.0, // 豬肉基本不含糖
-  "fish": 0.0, // 魚基本不含糖
-  "shrimp": 0.0, // 蝦基本不含糖
-  "vegetable": 2.0, // 蔬菜平均約含2g糖/100g
-  "salad": 2.5, // 沙拉約含2.5g糖/100g
-  "fruit": 10.0, // 水果平均約含10g糖/100g
-};
+// 視覺模型是否已成功加載
+let modelLoaded = false;
 
-// 直接設定預設值，不再依賴API
-function getDefaultSugar(label) {
-  if (!label) return 5.0;  // 默認值
+// 更新狀態消息
+function updateStatus(msg) {
+  $('statusMsg').textContent = msg;
+}
+
+// 獲取食物糖分
+function getFoodSugar(label) {
+  if (!label) return 5.0;
   
-  label = label.toLowerCase();
+  label = label.toLowerCase().trim();
   
-  // 直接匹配常見食物
-  for (const [food, sugar] of Object.entries(commonFoodSugar)) {
-    if (label.includes(food)) {
-      return sugar;
+  // 1. 嘗試完全匹配
+  if (foodSugarDatabase[label] !== undefined) {
+    return foodSugarDatabase[label];
+  }
+  
+  // 2. 嘗試部分匹配
+  for (const [key, value] of Object.entries(foodSugarDatabase)) {
+    if (label.includes(key) || key.includes(label)) {
+      return value;
     }
   }
   
-  // 根據類別估算
-  if (label.includes('fruit') || 
-      label.includes('apple') || 
-      label.includes('banana') || 
-      label.includes('berry')) {
-    return 10.0; // 水果
-  }
-  if (label.includes('vegetable') || 
-      label.includes('salad') || 
-      label.includes('broccoli')) {
-    return 2.0; // 蔬菜
-  }
-  if (label.includes('cake') || 
-      label.includes('sweet') || 
-      label.includes('dessert') || 
-      label.includes('candy')) {
-    return 30.0; // 甜點
-  }
-  if (label.includes('bread') || 
-      label.includes('bagel') || 
-      label.includes('sandwich')) {
-    return 5.0; // 麵包類
-  }
-  if (label.includes('meat') || 
-      label.includes('chicken') || 
-      label.includes('beef') || 
-      label.includes('pork')) {
-    return 0.0; // 肉類
-  }
-  if (label.includes('rice') || 
-      label.includes('noodle') || 
-      label.includes('pasta')) {
-    return 0.5; // 主食類
+  // 3. 按類別判斷
+  if (label.includes('rice') || label.includes('grain') || label.includes('noodle') || 
+      label.includes('pasta') || label.includes('bread')) {
+    return 2.0; // 主食類平均
   }
   
-  // 默認值
+  if (label.includes('fruit') || label.includes('apple') || label.includes('berry') || 
+      label.includes('banana') || label.includes('orange')) {
+    return 10.0; // 水果類平均
+  }
+  
+  if (label.includes('vegetable') || label.includes('veggie') || label.includes('salad') || 
+      label.includes('carrot') || label.includes('broccoli')) {
+    return 2.0; // 蔬菜類平均
+  }
+  
+  if (label.includes('meat') || label.includes('chicken') || label.includes('beef') || 
+      label.includes('pork') || label.includes('fish')) {
+    return 0.0; // 肉類平均
+  }
+  
+  if (label.includes('sweet') || label.includes('dessert') || label.includes('cake') || 
+      label.includes('cookie') || label.includes('chocolate')) {
+    return 30.0; // 甜點類平均
+  }
+  
+  if (label.includes('drink') || label.includes('beverage') || label.includes('juice') || 
+      label.includes('soda') || label.includes('tea') || label.includes('coffee')) {
+    return 6.0; // 飲料類平均
+  }
+  
+  // 默認糖分 (如無法識別)
   return 5.0;
 }
 
-// 日誌函數
-function log(msg) {
-  console.log(msg);
-  $('log').textContent = msg;
-  setTimeout(() => {
-    $('log').textContent = '';
-  }, 5000);
-}
-
 /* ---------- 初始化 -------------------------------------- */
-window.addEventListener('DOMContentLoaded',async()=>{
-  $('date').value=today();
-  $('name').value=localStorage.dm_name||'';
-  $('age').value=localStorage.dm_age||'';
+window.addEventListener('DOMContentLoaded', function() {
+  // 設置默認日期為今天
+  $('date').value = today();
   
-  // 從localStorage加載記錄
+  // 讀取保存的個人信息
+  $('name').value = localStorage.getItem('dm_name') || '';
+  $('age').value = localStorage.getItem('dm_age') || '';
+  
+  // 加載保存的記錄
+  loadRecords();
+  
+  // 初始化模態框
+  initModals();
+  
+  // 嘗試加載AI模型 (但不要阻塞界面)
+  initAIModel();
+  
+  // 設置各種事件監聽器
+  setupEventListeners();
+  
+  // 初始化表單狀態
+  toggleInfo();
+  
+  // 渲染用户界面
+  render();
+});
+
+// 加載保存的記錄
+function loadRecords() {
   try {
-    const saved = localStorage.getItem('dm_records');
-    if (saved) {
-      records = JSON.parse(saved);
+    records = JSON.parse(localStorage.getItem('dm_records') || '[]');
+    
+    // 處理舊記錄，確保格式正確
+    records = records.map(record => {
+      // 確保每條記錄都有ID
+      if (!record.id) {
+        record.id = Date.now() + Math.floor(Math.random() * 1000);
+      }
       
-      // 清理舊記錄，確保每個記錄都有ID
-      records = records.map(record => {
-        if (!record.id) {
-          record.id = Date.now() + Math.floor(Math.random() * 1000);
-        }
-        
-        // 處理照片數據
-        if (record.photos) {
-          record.photos = record.photos.map(photo => {
-            if (!photo.sugar && photo.label) {
-              // 為沒有糖分數據的照片設置預設值
-              photo.sugar = getDefaultSugar(photo.label);
-              photo.state = 'done';
-              photo.source = 'default';
-            }
-            
-            // 確保顯示狀態正確
-            if (photo.sugar) {
-              photo.state = 'done';
-            }
-            
-            return photo;
-          });
-        }
-        
-        return record;
-      });
+      // 處理照片數據
+      if (record.photos && Array.isArray(record.photos)) {
+        record.photos = record.photos.map(photo => {
+          // 修復可能的錯誤數據
+          const p = {
+            url: photo.url || photo.dataUrl || '',
+            state: 'done',
+            label: photo.label || '未識別',
+            source: photo.source || 'legacy'
+          };
+          
+          // 處理糖分數據
+          if (photo.sugar === null || photo.sugar === undefined || isNaN(parseFloat(photo.sugar))) {
+            p.sugar = getFoodSugar(p.label);
+          } else {
+            p.sugar = parseFloat(photo.sugar);
+          }
+          
+          return p;
+        });
+      } else {
+        record.photos = [];
+      }
       
-      // 保存清理後的記錄
-      saveRecords();
-    }
+      return record;
+    });
+    
+    // 保存處理後的記錄
+    saveRecords();
   } catch (e) {
     console.error('加載記錄時出錯', e);
     records = [];
   }
-  
-  // 初始化所有模態框
+}
+
+// 初始化模態框
+function initModals() {
+  // 關閉按鈕
   document.querySelectorAll('.modal .close').forEach(closeBtn => {
     closeBtn.onclick = function() {
       const modalId = this.dataset.modal || 'editModal';
@@ -495,21 +627,21 @@ window.addEventListener('DOMContentLoaded',async()=>{
     }
   };
   
-  // 保存糖分按鈕事件
+  // 保存糖分按鈕
   $('saveSugarBtn').onclick = function() {
     if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
       const value = parseFloat($('editSugarValue').value);
       if (!isNaN(value)) {
         photos[currentEditingPhotoIndex].sugar = value;
         photos[currentEditingPhotoIndex].state = 'done';
-        photos[currentEditingPhotoIndex].manual = true; // 標記為手動編輯
+        photos[currentEditingPhotoIndex].manual = true;
         renderPhotos();
       }
     }
     $('editModal').style.display = 'none';
   };
   
-  // 編輯記錄表單提交
+  // 編輯記錄表單
   $('editRecordForm').onsubmit = function(e) {
     e.preventDefault();
     saveEditedRecord();
@@ -526,145 +658,192 @@ window.addEventListener('DOMContentLoaded',async()=>{
       $('deleteConfirmModal').style.display = 'none';
     }
   };
-  
-  try {
-    log('正在加載AI模型...');
-    model = await mobilenet.load();
-    log('AI模型加載完成！');
-  } catch (e) {
-    console.error('AI模型加載失敗', e);
-    log('AI模型加載失敗，將使用預設值');
-  }
-  
-  toggleInfo();
-  render();
-});
-
-$('showInfo').onchange=toggleInfo;
-function toggleInfo(){
-  const s=$('showInfo').checked;
-  document.querySelector('.personal').style.display=s?'block':'none';
-  $('name').required=$('age').required=s;
 }
 
-/* ---------- 主分頁切換 ---------------------------------- */
-$('tabAdd').onclick=()=>switchTab(true);
-$('tabList').onclick=()=>switchTab(false);
-function switchTab(add){
-  $('tabAdd').classList.toggle('active',add);
-  $('tabList').classList.toggle('active',!add);
-  $('addSec').classList.toggle('active',add);
-  $('listSec').classList.toggle('active',!add);
+// 初始化AI模型 (非阻塞)
+function initAIModel() {
+  updateStatus('正在準備 AI 模型...');
   
-  // 切換到記錄頁時更新
+  // 不使用await，避免阻塞UI
+  const loadModel = async () => {
+    try {
+      if (typeof mobilenet !== 'undefined') {
+        await mobilenet.load().then(model => {
+          window.visionModel = model;
+          modelLoaded = true;
+          updateStatus('AI 模型已準備就緒');
+        });
+      } else {
+        throw new Error('未找到 mobilenet 模組');
+      }
+    } catch (e) {
+      console.error('AI模型加載失敗', e);
+      updateStatus('將使用預設糖分估算');
+    }
+  };
+  
+  // 非阻塞式加載模型
+  setTimeout(loadModel, 1000);
+}
+
+// 設置事件監聽器
+function setupEventListeners() {
+  // 個人資料顯示切換
+  $('showInfo').onchange = toggleInfo;
+  
+  // 主分頁切換
+  $('tabAdd').onclick = () => switchTab(true);
+  $('tabList').onclick = () => switchTab(false);
+  
+  // 子分頁切換
+  $('tabL').onclick = () => sub(true);
+  $('tabC').onclick = () => sub(false);
+  
+  // 照片拍攝和上傳
+  $('camBtn').onclick = () => $('camIn').click();
+  $('fileBtn').onclick = () => $('fileIn').click();
+  
+  $('camIn').onchange = e => {
+    addFiles(e.target.files);
+    e.target.value = '';
+  };
+  
+  $('fileIn').onchange = e => {
+    addFiles(e.target.files);
+    e.target.value = '';
+  };
+  
+  // 圖表顯示切換
+  $('monthPick').onchange = render;
+  $('chartBtn').onclick = toggleChart;
+  
+  // 表單提交
+  $('form').onsubmit = saveNewRecord;
+}
+
+// 切換個人資料顯示
+function toggleInfo() {
+  const s = $('showInfo').checked;
+  document.querySelector('.personal').style.display = s ? 'block' : 'none';
+  $('name').required = $('age').required = s;
+}
+
+// 切換主分頁
+function switchTab(add) {
+  $('tabAdd').classList.toggle('active', add);
+  $('tabList').classList.toggle('active', !add);
+  $('addSec').classList.toggle('active', add);
+  $('listSec').classList.toggle('active', !add);
+  
   if (!add) render();
 }
 
-/* ---------- 子分頁切換 ---------------------------------- */
-$('tabL').onclick=()=>sub(true);
-$('tabC').onclick=()=>sub(false);
-function sub(l){
-  $('tabL').classList.toggle('active',l);
-  $('tabC').classList.toggle('active',!l);
-  $('listBox').style.display=l?'block':'none';
-  $('calBox').style.display=l?'none':'block';
+// 切換子分頁
+function sub(l) {
+  $('tabL').classList.toggle('active', l);
+  $('tabC').classList.toggle('active', !l);
+  $('listBox').style.display = l ? 'block' : 'none';
+  $('calBox').style.display = l ? 'none' : 'block';
 }
 
-/* ---------- 上載 / 拍照 -------------------------------- */
-$('camBtn').onclick=()=>$('camIn').click();
-$('fileBtn').onclick=()=>$('fileIn').click();
-$('camIn').onchange=e=>{
-  addFiles(e.target.files);
-  e.target.value = ''; // 清空，允許重複選擇相同檔案
-};
-$('fileIn').onchange=e=>{
-  addFiles(e.target.files);
-  e.target.value = ''; // 清空，允許重複選擇相同檔案
-};
+// 切換圖表顯示
+function toggleChart() {
+  chartShown = !chartShown;
+  $('chartBtn').textContent = chartShown ? '隱藏圖表' : '分析圖表';
+  document.querySelector('.chartWrap').style.display = chartShown ? 'block' : 'none';
+  if (chartShown) renderChart();
+}
 
-async function addFiles(fs){
+/* ---------- 照片處理 ---------------------------------- */
+// 添加照片文件
+async function addFiles(fs) {
   if (!fs || !fs.length) return;
   
-  for(const f of fs){
-    if(!f.type.startsWith('image/')) continue;
+  for (const f of fs) {
+    if (!f.type.startsWith('image/')) continue;
     
     try {
       const url = URL.createObjectURL(f);
       const p = {
-        url, 
-        state: 'loading', 
-        sugar: null, 
+        url,
+        state: 'loading',
+        sugar: null,
         file: f.name,
         label: ''
       };
+      
       photos.push(p);
       renderPhotos();
       
-      if (model) {
-        predict(p, photos.length - 1);
-      } else {
-        // 如果模型不可用，直接使用默認值
-        p.sugar = 5.0;
-        p.state = 'done';
-        p.source = 'default';
-        p.label = '未識別';
-        renderPhotos();
-      }
+      // 使用視覺模型辨識照片
+      identifyFood(p, photos.length - 1);
     } catch (e) {
       console.error('處理圖片時出錯', e);
-      log('處理圖片出錯: ' + e.message);
+      updateStatus('處理圖片出錯: ' + e.message);
     }
   }
 }
 
-/* ---------- AI + 糖份 ---------------------------------- */
-async function predict(p, index){
-  try{
+// 使用AI辨識食物
+async function identifyFood(photo, index) {
+  try {
     const img = new Image();
     img.crossOrigin = "Anonymous";
-    img.src = p.url;
+    img.src = photo.url;
     await img.decode();
     
-    log('正在分析食物...');
-    const predictions = await model.classify(img);
+    updateStatus('正在分析食物...');
     
-    if (predictions && predictions.length > 0) {
-      const [pred] = predictions;
-      const label = pred.className.split(',')[0].toLowerCase();
-      log(`識別為: ${label}`);
+    // 如果模型已加載，使用模型識別
+    if (modelLoaded && window.visionModel) {
+      const predictions = await window.visionModel.classify(img);
       
-      p.label = label;
-      p.confidence = pred.probability;
-      
-      // 直接使用本地估算
-      const sugarValue = getDefaultSugar(label);
-      p.sugar = sugarValue;
-      p.state = 'done';
-      p.source = 'local';
-      
-      log(`${label}: 約含 ${sugarValue}g 糖分/100g`);
+      if (predictions && predictions.length > 0) {
+        const [pred] = predictions;
+        const label = pred.className.split(',')[0];
+        updateStatus(`識別為: ${label}`);
+        
+        photo.label = label;
+        photo.confidence = pred.probability;
+        
+        // 根據識別結果獲取糖分值
+        const sugarValue = getFoodSugar(label);
+        photo.sugar = sugarValue;
+        photo.state = 'done';
+        photo.source = 'ai';
+        
+        updateStatus(`${label}: 約含 ${sugarValue}g 糖分/100g`);
+      } else {
+        // 無法識別，使用預設值
+        useDefaultSugar(photo, '未識別食物');
+      }
     } else {
-      // 如果無法識別，使用預設值
-      p.label = '未識別食物';
-      p.sugar = 5.0;
-      p.state = 'done';
-      p.source = 'default';
-      log('無法識別食物，使用預設值');
+      // 模型未加載，使用預設值
+      useDefaultSugar(photo, '預設估算');
+      updateStatus('使用預設糖分估算');
     }
-  } catch(e) {
+  } catch (e) {
     console.error('AI預測失敗', e);
-    p.state = 'done';
-    p.sugar = 5.0;
-    p.source = 'error';
-    p.label = '識別失敗';
-    log('分析失敗，使用預設值');
+    useDefaultSugar(photo, '識別失敗');
+    updateStatus('分析失敗，使用預設值');
   }
   
   renderPhotos();
 }
 
-/* ---------- thumbnails --------------------------------- */
-$('photosWrap').onclick=e=>{
+// 使用預設糖分值
+function useDefaultSugar(photo, label) {
+  // 根據照片內容嘗試推測食物類型 (簡單版本)
+  const sugarValue = 5.0;  // 默認值
+  
+  photo.label = label;
+  photo.sugar = sugarValue;
+  photo.state = 'done';
+  photo.source = 'default';
+}
+
+// 處理照片縮圖點擊事件
+$('photosWrap').onclick = e => {
   // 刪除照片
   if (e.target.dataset.idx) {
     const i = parseInt(e.target.dataset.idx);
@@ -680,6 +859,7 @@ $('photosWrap').onclick=e=>{
   }
 };
 
+// 打開編輯糖分模態框
 function openEditModal(index) {
   if (index < 0 || index >= photos.length) return;
   
@@ -693,40 +873,42 @@ function openEditModal(index) {
   $('editModal').style.display = 'block';
 }
 
-function renderPhotos(){
-  $('photosWrap').innerHTML = photos.map((p,i) => `
+// 渲染照片縮圖
+function renderPhotos() {
+  $('photosWrap').innerHTML = photos.map((p, i) => `
     <div class="photo">
       <img src="${p.url}" alt="食物照片">
-      <em>${p.state==='loading' ? '⏳' : p.state==='fail' ? '⚠️' : p.sugar+' g'}</em>
+      <em>${p.state === 'loading' ? '⏳' : p.state === 'fail' ? '⚠️' : p.sugar + ' g'}</em>
       <span data-idx="${i}">✖</span>
       <span class="edit-sugar" data-edit="${i}">✏️</span>
     </div>`).join('');
 }
 
-/* ---------- 儲存 --------------------------------------- */
-$('form').onsubmit=e=>{
+/* ---------- 記錄管理 ---------------------------------- */
+// 保存新記錄
+function saveNewRecord(e) {
   e.preventDefault();
   
-  if(photos.some(p=>p.state==='loading')){
+  if (photos.some(p => p.state === 'loading')) {
     alert('相片仍在分析中，請稍候');
     return;
   }
   
   // 保存個人資料
-  localStorage.dm_name=$('name').value.trim();
-  localStorage.dm_age=$('age').value.trim();
+  localStorage.setItem('dm_name', $('name').value.trim());
+  localStorage.setItem('dm_age', $('age').value.trim());
   
-  // 準備儲存圖片的數據 (只保留需要的屬性)
+  // 準備照片數據
   const photoData = photos.map(p => ({
     url: p.url,
-    state: p.state || 'done',
-    sugar: p.sugar || 5.0,  // 確保有默認值
+    state: 'done',
+    sugar: p.sugar || 5.0,
     label: p.label || '',
     manual: p.manual || false,
     source: p.source || 'unknown'
   }));
   
-  // 創建新紀錄
+  // 創建新記錄
   const newRecord = {
     id: Date.now(),
     name: $('name').value.trim(),
@@ -742,19 +924,19 @@ $('form').onsubmit=e=>{
   records.unshift(newRecord);
   
   // 保存記錄
-  saveRecords();
-  
-  alert('記錄已成功儲存');
-  
-  // 重置表單
-  $('sugarMmol').value = '';
-  $('date').value = today();
-  photos = [];
-  renderPhotos();
-  render();
-};
+  if (saveRecords()) {
+    alert('記錄已成功儲存');
+    
+    // 重置表單
+    $('sugarMmol').value = '';
+    $('date').value = today();
+    photos = [];
+    renderPhotos();
+    render();
+  }
+}
 
-/* ---------- 保存記錄 ----------------------------------- */
+// 保存記錄到localStorage
 function saveRecords() {
   try {
     localStorage.setItem('dm_records', JSON.stringify(records));
@@ -766,7 +948,7 @@ function saveRecords() {
   }
 }
 
-/* ---------- 編輯記錄 ----------------------------------- */
+// 編輯記錄
 function editRecord(recordId) {
   const record = records.find(r => r.id == recordId);
   if (!record) return;
@@ -807,6 +989,7 @@ function editRecord(recordId) {
   $('editRecordModal').style.display = 'block';
 }
 
+// 保存編輯的記錄
 function saveEditedRecord() {
   const recordId = $('editRecordId').value;
   const recordIndex = records.findIndex(r => r.id == recordId);
@@ -830,6 +1013,7 @@ function saveEditedRecord() {
   }
 }
 
+// 刪除記錄中的照片
 function deleteRecordPhoto(recordId, photoIdx) {
   const record = records.find(r => r.id == recordId);
   if (record && record.photos && record.photos[photoIdx]) {
@@ -838,12 +1022,13 @@ function deleteRecordPhoto(recordId, photoIdx) {
   }
 }
 
-/* ---------- 刪除記錄 ----------------------------------- */
+// 顯示刪除確認對話框
 function showDeleteConfirm(recordId) {
   currentDeletingRecordId = recordId;
   $('deleteConfirmModal').style.display = 'block';
 }
 
+// 刪除記錄
 function deleteRecord(recordId) {
   const index = records.findIndex(r => r.id == recordId);
   if (index !== -1) {
@@ -855,28 +1040,21 @@ function deleteRecord(recordId) {
   }
 }
 
-/* ---------- List / Cal / Chart ------------------------- */
-$('monthPick').onchange=render;
-
-$('chartBtn').onclick=()=>{
-  chartShown=!chartShown;
-  $('chartBtn').textContent=chartShown?'隱藏圖表':'分析圖表';
-  document.querySelector('.chartWrap').style.display = chartShown ? 'block' : 'none';
-  if(chartShown) renderChart();
-};
-
-function render(){
-  // 先設置月份選擇器預設值為當前月份
+/* ---------- 用户界面渲染 ----------------------------- */
+// 渲染用户界面
+function render() {
+  // 設置月份選擇器預設值為當前月份
   if (!$('monthPick').value) {
     $('monthPick').value = today().substring(0, 7);
   }
   
   buildList();
   buildCal();
-  if(chartShown) renderChart();
+  if (chartShown) renderChart();
 }
 
-function buildList(){
+// 構建記錄列表
+function buildList() {
   const ym = $('monthPick').value;
   const filteredRecords = records.filter(r => !ym || r.date.startsWith(ym));
   
@@ -896,18 +1074,19 @@ function buildList(){
       ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
       ${r.photos && r.photos.length ? `<div class="attach">
         ${r.photos.map(p => `<figure><img src="${p.url}" alt="食物照片">
-          <figcaption>${p.sugar ? p.sugar + ' g' : '?g'}</figcaption></figure>`).join('')}
+          <figcaption>${p.label ? `${p.label.slice(0, 12)}${p.label.length > 12 ? '...' : ''}<br>` : ''}${p.sugar ? p.sugar + ' g' : '?g'}</figcaption></figure>`).join('')}
       </div>` : ''}
     </div>`).join('');
 }
 
+// 格式化日期
 function formatDate(dateStr) {
-  // 將YYYY-MM-DD格式化為更友好的顯示
   const parts = dateStr.split('-');
   return `${parts[0]}年${parts[1]}月${parts[2]}日`;
 }
 
-function buildCal(){
+// 構建月曆視圖
+function buildCal() {
   const ym = $('monthPick').value || today().substring(0, 7);
   const [y, m] = ym.split('-').map(Number);
   
@@ -960,7 +1139,8 @@ function buildCal(){
   $('calBox').innerHTML = html;
 }
 
-function renderChart(){
+// 渲染血糖圖表
+function renderChart() {
   if (!chartShown) return;
   
   const ym = $('monthPick').value;
