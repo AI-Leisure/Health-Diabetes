@@ -51,7 +51,7 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 .photo img{width:100%;height:100%;object-fit:cover}
 .photo em{
   position:absolute;left:0;right:0;bottom:0;background:#fff;
-  font-size:.85rem;font-weight:600;text-align:center
+  font-size:.75rem;font-weight:600;text-align:center
 }
 .photo span{
   position:absolute;top:-5px;right:-5px;width:18px;height:18px;
@@ -246,6 +246,24 @@ canvas{max-width:100%;height:240px!important}
   width: 100%;
   margin-top: 10px;
 }
+
+.ai-progress {
+  margin-top: 5px;
+  width: 100%;
+  height: 5px;
+  background-color: #f0f0f0;
+  border-radius: 2px;
+  overflow: hidden;
+  display: none;
+}
+
+.ai-progress-bar {
+  height: 100%;
+  width: 0%;
+  background-color: var(--blue);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
 </style>
 </head>
 <body>
@@ -287,7 +305,10 @@ canvas{max-width:100%;height:240px!important}
       <input id="fileIn" type="file" accept="image/*" multiple hidden>
     </label>
 
-    <div id="statusMsg" class="status-msg">請上傳食物照片以估算糖分含量</div>
+    <div id="statusMsg" class="status-msg">上傳食物照片後將自動辨識食物類型</div>
+    <div id="aiProgress" class="ai-progress">
+      <div id="aiProgressBar" class="ai-progress-bar"></div>
+    </div>
 
     <div id="photosWrap"></div>
     
@@ -343,6 +364,8 @@ canvas{max-width:100%;height:240px!important}
     </div>
     <img id="editImage" style="width:100%;max-height:200px;object-fit:contain;margin-bottom:10px" alt="食物照片">
     
+    <p id="aiResult" style="margin-bottom:10px;font-weight:600;color:var(--blue)"></p>
+    
     <label>選擇食物類型
       <select id="foodTypeSelect" class="food-select">
         <option value="">請選擇食物類型...</option>
@@ -395,6 +418,9 @@ canvas{max-width:100%;height:240px!important}
           <option value="juice">果汁 (9.8g)</option>
           <option value="coffee">咖啡 (0.0g)</option>
           <option value="tea">茶 (0.0g)</option>
+        </optgroup>
+        <optgroup label="非食物">
+          <option value="non-food">非食物 (0.0g)</option>
         </optgroup>
       </select>
     </label>
@@ -459,6 +485,8 @@ canvas{max-width:100%;height:240px!important}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
 
 <script>
 /* 全局變量 */
@@ -472,6 +500,12 @@ let chartShown=false;
 let currentEditingPhotoIndex = -1;
 let currentDeletingRecordId = null;
 let currentPreviewImg = null;
+let mobileNetModel = null;
+let isModelLoading = false;
+
+// 圖像識別配置
+const IMAGE_SIZE = 224; // MobileNet 模型輸入尺寸
+const TOPK_PREDICTIONS = 3; // 返回可能性最高的前K個預測
 
 // 常見食物的糖分數據庫 - 中英文對照
 const sugarValues = {
@@ -529,14 +563,98 @@ const sugarValues = {
   "soda": {name: "汽水", sugar: 10.6},
   "juice": {name: "果汁", sugar: 9.8},
   "coffee": {name: "咖啡", sugar: 0.0},
-  "tea": {name: "茶", sugar: 0.0}
+  "tea": {name: "茶", sugar: 0.0},
+  
+  // 非食物
+  "non-food": {name: "非食物", sugar: 0.0}
 };
+
+// 食物類別標籤映射 (將英文標籤映射到我們的食物類別)
+const foodMapping = {
+  // 米飯和穀物類
+  "rice": "rice",
+  "brown rice": "brown rice",
+  "oat": "oatmeal",
+  "grain": "rice",
+  "cereal": "rice",
+  "noodle": "noodles",
+  "pasta": "pasta",
+  "bread": "bread",
+  "corn": "corn",
+  "potato": "potato",
+  "sweet potato": "sweet potato",
+  
+  // 肉類
+  "chicken": "chicken",
+  "beef": "beef",
+  "pork": "pork",
+  "meat": "beef",
+  "fish": "fish",
+  "seafood": "fish",
+  "egg": "egg",
+  "tofu": "tofu",
+  
+  // 蔬菜類
+  "vegetable": "vegetable",
+  "salad": "salad",
+  "carrot": "carrot",
+  "tomato": "tomato",
+  "broccoli": "broccoli",
+  "lettuce": "vegetable",
+  "spinach": "vegetable",
+  "cabbage": "vegetable",
+  
+  // 水果類
+  "fruit": "fruit",
+  "apple": "apple",
+  "banana": "banana",
+  "orange": "orange",
+  "grape": "grape",
+  "watermelon": "watermelon",
+  "strawberry": "fruit",
+  "berry": "fruit",
+  
+  // 乳製品
+  "milk": "milk",
+  "yogurt": "yogurt",
+  "cheese": "cheese",
+  "ice cream": "ice cream",
+  "dairy": "milk",
+  
+  // 甜點與零食
+  "chocolate": "chocolate",
+  "cake": "cake",
+  "cookie": "cookie",
+  "candy": "candy",
+  "honey": "honey",
+  "sweet": "cake",
+  "dessert": "cake",
+  
+  // 飲料
+  "soda": "soda",
+  "soft drink": "soda",
+  "juice": "juice",
+  "coffee": "coffee",
+  "tea": "tea",
+  "beverage": "juice",
+  "water": "water"
+};
+
+// 非食物類別 (當識別到這些類別時，標記為非食物)
+const nonFoodCategories = [
+  "person", "human", "people", "furniture", "device", "electronic", "phone", 
+  "computer", "car", "vehicle", "toy", "building", "house", "clothing", "accessory",
+  "tool", "book", "paper", "document", "landscape", "scenery", "animal", "pet"
+];
 
 // 計算糖分總和
 function calculateSugarSum(photoArray) {
   if (!photoArray || photoArray.length === 0) return 0;
   
   return photoArray.reduce((sum, photo) => {
+    // 非食物不計入糖分總和
+    if (photo.label === 'non-food') return sum;
+    
     const sugarValue = parseFloat(photo.sugar) || 0;
     return sum + sugarValue;
   }, 0).toFixed(1);
@@ -545,6 +663,25 @@ function calculateSugarSum(photoArray) {
 // 更新狀態消息
 function updateStatus(msg) {
   $('statusMsg').textContent = msg;
+}
+
+// 更新AI進度條
+function updateAIProgress(progress) {
+  if (progress === 0) {
+    $('aiProgress').style.display = 'none';
+    $('aiProgressBar').style.width = '0%';
+    return;
+  }
+  
+  $('aiProgress').style.display = 'block';
+  $('aiProgressBar').style.width = `${Math.min(100, progress)}%`;
+  
+  if (progress >= 100) {
+    setTimeout(() => {
+      $('aiProgress').style.display = 'none';
+      $('aiProgressBar').style.width = '0%';
+    }, 500);
+  }
 }
 
 // 更新糖分總和顯示
@@ -557,7 +694,7 @@ function updateSugarSum() {
 }
 
 /* ---------- 初始化 -------------------------------------- */
-window.addEventListener('DOMContentLoaded', function() {
+window.addEventListener('DOMContentLoaded', async function() {
   // 設置默認日期為今天
   $('date').value = today();
   
@@ -577,9 +714,48 @@ window.addEventListener('DOMContentLoaded', function() {
   // 初始化表單狀態
   toggleInfo();
   
+  // 加載AI模型（非阻塞方式）
+  loadMobileNetModel();
+  
   // 渲染用户界面
   render();
 });
+
+// 非阻塞加載MobileNet模型
+async function loadMobileNetModel() {
+  if (mobileNetModel || isModelLoading) return;
+  
+  try {
+    isModelLoading = true;
+    updateStatus('正在加載AI模型...');
+    updateAIProgress(10);
+    
+    // 確認TensorFlow.js和MobileNet是否可用
+    if (typeof tf === 'undefined' || typeof mobilenet === 'undefined') {
+      throw new Error('AI庫未加載，將使用手動選擇');
+    }
+    
+    // 在後台加載模型
+    setTimeout(async () => {
+      try {
+        updateAIProgress(30);
+        mobileNetModel = await mobilenet.load();
+        updateAIProgress(100);
+        updateStatus('AI模型加載完成，可以上傳照片');
+        console.log('MobileNet模型加載成功');
+        isModelLoading = false;
+      } catch (err) {
+        console.error('模型加載失敗', err);
+        updateStatus('AI模型加載失敗，將使用手動選擇');
+        isModelLoading = false;
+      }
+    }, 100);
+  } catch (e) {
+    console.error('初始化模型失敗', e);
+    updateStatus('AI初始化失敗，將使用手動選擇');
+    isModelLoading = false;
+  }
+}
 
 // 加載保存的記錄
 function loadRecords() {
@@ -603,14 +779,13 @@ function loadRecords() {
           let label = photo.label || '';
           let sugar = photo.sugar;
           
-          // 修正標籤，將英文標籤轉為中文顯示名稱
+          // 修正標籤，確保有對應的糖分值
           if (label && sugarValues[label.toLowerCase()]) {
             const foodInfo = sugarValues[label.toLowerCase()];
-            sugar = foodInfo.sugar;
-            label = label; // 保留原始標籤以便於查找
+            sugar = sugar || foodInfo.sugar;
           } else if (!label || label === '預設估算' || label === '識別失敗') {
             // 對於沒有標籤的照片，給予一個隨機但合理的食物類型
-            const foodKeys = Object.keys(sugarValues);
+            const foodKeys = Object.keys(sugarValues).filter(k => k !== 'non-food');
             const randomKey = foodKeys[Math.floor(Math.random() * foodKeys.length)];
             label = randomKey;
             sugar = sugarValues[randomKey].sugar;
@@ -633,6 +808,9 @@ function loadRecords() {
       } else {
         record.photos = [];
       }
+      
+      // 添加或更新糖分總和
+      record.sugarSum = calculateSugarSum(record.photos);
       
       return record;
     });
@@ -807,14 +985,14 @@ async function addFiles(fs) {
         sugar: null,
         file: f.name,
         label: '',
-        source: 'manual'
+        source: 'waiting'
       };
       
       photos.push(photo);
       renderPhotos();
       
-      // 用戶手動選擇食物類型
-      askUserForFoodType(photo, photos.length - 1);
+      // 使用AI自動識別照片
+      identifyFoodInImage(photo, photos.length - 1);
     } catch (e) {
       console.error('處理圖片時出錯', e);
       updateStatus('處理圖片出錯: ' + e.message);
@@ -822,31 +1000,150 @@ async function addFiles(fs) {
   }
 }
 
-// 請求用戶手動選擇食物類型
-function askUserForFoodType(photo, index) {
-  // 直接打開編輯模態框讓用戶選擇食物類型
-  currentEditingPhotoIndex = index;
+// 使用MobileNet識別照片中的食物
+async function identifyFoodInImage(photo, index) {
+  updateStatus('正在分析照片...');
   
-  // 設置預覽圖
-  $('editImage').src = photo.url;
+  // 如果AI模型尚未加載，使用手動選擇
+  if (!mobileNetModel) {
+    // 允許用戶手動選擇食物類型
+    photo.state = 'done';
+    photo.label = 'rice'; // 預設值
+    photo.sugar = sugarValues['rice'].sugar;
+    photo.source = 'manual';
+    renderPhotos();
+    updateSugarSum();
+    
+    // 彈出編輯窗口讓用戶選擇正確的食物類型
+    openEditModal(index);
+    return;
+  }
   
-  // 重置下拉框和糖分值
-  $('foodTypeSelect').value = '';
-  $('editSugarValue').value = '';
+  try {
+    // 加載圖像
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = photo.url;
+    
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      setTimeout(resolve, 3000); // 圖像加載超時，避免無限等待
+    });
+    
+    // 使用MobileNet模型進行預測
+    const predictions = await mobileNetModel.classify(img, TOPK_PREDICTIONS);
+    console.log('預測結果:', predictions);
+    
+    if (predictions && predictions.length > 0) {
+      // 檢查是否為非食物
+      const isNonFood = predictions.some(p => 
+        nonFoodCategories.some(cat => 
+          p.className.toLowerCase().includes(cat.toLowerCase()) && p.probability > 0.5
+        )
+      );
+      
+      if (isNonFood) {
+        // 如果預測為非食物，標記為非食物
+        photo.label = 'non-food';
+        photo.sugar = 0;
+        photo.state = 'done';
+        photo.source = 'ai';
+        photo.predictions = predictions;
+        renderPhotos();
+        updateSugarSum();
+        return;
+      }
+      
+      // 嘗試將預測結果映射到我們的食物類別
+      let mappedFood = null;
+      const topPrediction = predictions[0].className.toLowerCase();
+      
+      // 遍歷預測結果，找到最匹配的食物類別
+      for (const prediction of predictions) {
+        const className = prediction.className.toLowerCase();
+        const words = className.split(/[\s,]+/);
+        
+        // 逐個單詞查找匹配
+        for (const word of words) {
+          if (word.length < 3) continue; // 跳過太短的單詞
+          
+          // 在食物映射中查找
+          for (const [key, value] of Object.entries(foodMapping)) {
+            if (key.includes(word) || word.includes(key)) {
+              mappedFood = value;
+              break;
+            }
+          }
+          if (mappedFood) break;
+        }
+        if (mappedFood) break;
+      }
+      
+      // 如果沒有找到匹配，使用默認食物
+      if (!mappedFood) {
+        // 嘗試通過文件名猜測
+        mappedFood = guessFromFileName(photo.file);
+        
+        // 如果仍然無法猜測，使用默認值
+        if (!mappedFood) {
+          mappedFood = 'rice'; // 默認使用白飯
+        }
+      }
+      
+      // 設置照片信息
+      photo.label = mappedFood;
+      photo.sugar = sugarValues[mappedFood].sugar;
+      photo.state = 'done';
+      photo.source = 'ai';
+      photo.predictions = predictions;
+      
+      renderPhotos();
+      updateSugarSum();
+      
+      // 提示用戶查看和編輯識別結果
+      updateStatus(`已識別為 ${sugarValues[mappedFood].name}，點擊照片可編輯`);
+    } else {
+      throw new Error('無法識別照片內容');
+    }
+  } catch (e) {
+    console.error('圖像識別失敗', e);
+    
+    // 如果識別失敗，設置默認值並讓用戶手動選擇
+    photo.state = 'done';
+    photo.label = 'rice'; // 預設值
+    photo.sugar = sugarValues['rice'].sugar;
+    photo.source = 'fallback';
+    renderPhotos();
+    updateSugarSum();
+    
+    // 彈出編輯窗口讓用戶選擇正確的食物類型
+    openEditModal(index);
+    updateStatus('自動識別失敗，請手動選擇食物類型');
+  }
+}
+
+// 從文件名猜測食物類型
+function guessFromFileName(fileName) {
+  if (!fileName) return null;
   
-  // 設置一個默認值，防止用戶不選擇
-  photo.label = 'rice';
-  photo.sugar = sugarValues['rice'].sugar;
-  photo.state = 'done';
+  const lowerName = fileName.toLowerCase();
   
-  // 先渲染照片，顯示預設值
-  renderPhotos();
-  updateSugarSum();
+  // 檢查文件名是否包含已知食物名稱
+  for (const food in sugarValues) {
+    if (lowerName.includes(food)) {
+      return food;
+    }
+  }
   
-  // 然後顯示模態框讓用戶選擇
-  $('editModal').style.display = 'block';
+  // 嘗試通過食物映射匹配
+  for (const [key, value] of Object.entries(foodMapping)) {
+    if (lowerName.includes(key)) {
+      return value;
+    }
+  }
   
-  updateStatus('請選擇照片中的食物類型');
+  return null;
 }
 
 // 處理照片縮圖點擊事件
@@ -885,7 +1182,9 @@ function openPreviewModal(photo) {
   
   // 設置標題
   let caption = '';
-  if (photo.label && sugarValues[photo.label]) {
+  if (photo.label === 'non-food') {
+    caption = '非食物 (0 g 糖分)';
+  } else if (photo.label && sugarValues[photo.label]) {
     caption = `${sugarValues[photo.label].name}: ${photo.sugar} g 糖分/100g`;
   } else {
     caption = `糖分: ${photo.sugar} g/100g`;
@@ -906,6 +1205,18 @@ function openEditModal(index) {
   // 設置圖片
   $('editImage').src = photo.url;
   
+  // 如果有AI預測結果，顯示預測信息
+  if (photo.predictions && photo.predictions.length > 0) {
+    const topPredictions = photo.predictions.slice(0, 3);
+    const predictionText = topPredictions.map(p => 
+      `${p.className}: ${(p.probability * 100).toFixed(1)}%`
+    ).join('<br>');
+    
+    $('aiResult').innerHTML = `AI預測結果:<br>${predictionText}`;
+  } else {
+    $('aiResult').textContent = '';
+  }
+  
   // 設置下拉框
   $('foodTypeSelect').value = photo.label || '';
   
@@ -919,16 +1230,28 @@ function openEditModal(index) {
 // 渲染照片縮圖
 function renderPhotos() {
   $('photosWrap').innerHTML = photos.map((p, i) => {
-    let displayName = p.label;
-    if (p.label && sugarValues[p.label]) {
-      displayName = sugarValues[p.label].name;
+    let displayName = '載入中...';
+    let displaySugar = '';
+    
+    if (p.state === 'done') {
+      if (p.label === 'non-food') {
+        displayName = '非食物';
+        displaySugar = '0 g';
+      } else if (p.label && sugarValues[p.label]) {
+        displayName = sugarValues[p.label].name;
+        displaySugar = p.sugar + ' g';
+      } else {
+        displayName = p.label || '未知';
+        displaySugar = p.sugar + ' g';
+      }
+    } else if (p.state === 'fail') {
+      displayName = '識別失敗';
     }
     
     return `
     <div class="photo" data-index="${i}">
       <img src="${p.url}" alt="食物照片">
-      <em>${p.state === 'loading' ? '⏳' : p.state === 'fail' ? '⚠️' : 
-             displayName + '<br>' + p.sugar + ' g'}</em>
+      <em>${p.state === 'loading' ? '⏳ 識別中...' : displayName + '<br>' + displaySugar}</em>
       <span data-idx="${i}">✖</span>
       <span class="edit-sugar" data-edit="${i}">✏️</span>
     </div>`;
@@ -1019,15 +1342,20 @@ function editRecord(recordId) {
   let photosHtml = '';
   if (record.photos && record.photos.length) {
     photosHtml = record.photos.map((p, idx) => {
-      let displayName = p.label;
-      if (p.label && sugarValues[p.label]) {
+      let displayName = '';
+      
+      if (p.label === 'non-food') {
+        displayName = '非食物';
+      } else if (p.label && sugarValues[p.label]) {
         displayName = sugarValues[p.label].name;
+      } else {
+        displayName = p.label || '未知';
       }
       
       return `
       <div class="photo" data-record-id="${record.id}" data-photo-index="${idx}" onclick="previewRecordPhoto(${record.id}, ${idx})">
         <img src="${p.url}" alt="食物照片">
-        <em>${displayName}<br>${p.sugar ? p.sugar + ' g' : '?'}</em>
+        <em>${displayName}<br>${p.sugar ? p.sugar + ' g' : '0g'}</em>
         <span data-record-id="${record.id}" data-photo-idx="${idx}" class="delete-photo">✖</span>
       </div>`;
     }).join('');
@@ -1169,14 +1497,20 @@ function buildList() {
       ${r.sugarMmol != null ? `<p>血糖：<strong>${r.sugarMmol}</strong> mmol/L</p>` : ''}
       ${r.photos && r.photos.length ? `<div class="attach">
         ${r.photos.map((p, idx) => {
-          let displayName = p.label;
-          if (p.label && sugarValues[p.label]) {
+          let displayName = '';
+          
+          if (p.label === 'non-food') {
+            displayName = '非食物';
+          } else if (p.label && sugarValues[p.label]) {
             displayName = sugarValues[p.label].name;
+          } else {
+            displayName = p.label || '未知';
           }
+          
           return `
           <figure onclick="previewRecordPhoto(${r.id}, ${idx})">
             <img src="${p.url}" alt="食物照片">
-            <figcaption>${displayName || 'unknown'}<br>${p.sugar ? p.sugar + ' g' : '?g'}</figcaption>
+            <figcaption>${displayName}<br>${p.sugar ? p.sugar + ' g' : '0g'}</figcaption>
           </figure>`;
         }).join('')}
       </div>` : ''}
