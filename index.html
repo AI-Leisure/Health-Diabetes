@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <!--  =======================================================
-      糖尿病健康管理  v1.8   (2024-06-16)
-      • 估計糖份自動計算：mmol = mg/dL ÷ 18   ── 不再顯示輸入框
-      • 圖像壓縮：最長邊 1024px、quality 0.7
-      • showInfo 勾選即時刷新清單
+      糖尿病健康管理  v1.9   (2024-06-17)
+      • 估計糖份 (mmol/L) 自動計算、只讀顯示
+      • 圖片壓縮 + Thumbnail 固定 80×80
+      • showInfo 勾選即時遮蔽個資
     ======================================================= -->
 <html lang="zh-Hant">
 <head>
@@ -25,11 +25,13 @@ section{display:none}section.active{display:block}
 form{background:#fff;padding:1rem;border-radius:var(--r);box-shadow:0 2px 6px #0001;display:flex;flex-direction:column;gap:.8rem}
 label{display:flex;flex-direction:column;font-weight:600;font-size:.9rem}
 input,select,button{padding:.55rem .6rem;font-size:1rem;border:1px solid #ccc;border-radius:var(--r)}
+input[readonly]{background:#f0f0f0}
 input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.45rem}
 .inline{flex-direction:row;align-items:center;gap:.45rem}
 
 #photosWrap{display:flex;flex-wrap:wrap;gap:.45rem;margin-top:.4rem}
-.photo-thumb{width:80px;height:80px;object-fit:cover;border:1px solid #ccc;border-radius:var(--r);position:relative}
+.photo-thumb{width:80px;height:80px;border:1px solid #ccc;border-radius:var(--r);position:relative;overflow:hidden}
+.photo-thumb img{width:100%;height:100%;object-fit:cover}
 .photo-thumb span{position:absolute;top:-6px;right:-6px;background:#fff;border:1px solid #999;border-radius:50%;font-size:.7rem;width:18px;height:18px;line-height:16px;text-align:center;cursor:pointer}
 
 #listTools{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
@@ -96,6 +98,10 @@ canvas{max-width:100%}
         <input id="sugar" type="number" min="20" max="600">
       </label>
 
+      <label>估計糖份 (mmol/L)
+        <input id="sugarMmol" readonly>
+      </label>
+
       <!-- 食物照片 -->
       <label class="inline">拍照
         <button id="captureBtn" type="button">📷 拍照</button>
@@ -157,6 +163,7 @@ const $=id=>document.getElementById(id);
 /* --- 表單區 DOM --- */
 const dateInput=$('date');
 const showInfoChk=$('showInfo');
+const sugarInput=$('sugar'), sugarMmolInput=$('sugarMmol');
 const capBtn=$('captureBtn'), upBtn=$('uploadBtn');
 const capIn=$('captureIn'),   upIn=$('uploadIn');
 const photosWrap=$('photosWrap');
@@ -180,6 +187,9 @@ const shutter=$('shutter'),   camClose=$('camClose');
 /* ---------- 初始化 ---------- */
 dateInput.value=new Date().toISOString().split('T')[0];
 
+/* ---------- 血糖 ⇨ mmol 自動計算 ---------- */
+sugarInput.oninput=()=>{const v=parseFloat(sugarInput.value);sugarMmolInput.value=v? (v/18).toFixed(1):'';};
+
 /* ---------- 分頁切換 ---------- */
 tabForm.onclick=()=>switchTab(true);
 tabList.onclick=()=>switchTab(false);
@@ -202,13 +212,13 @@ function toggleSub(listOn){
 /* ---------- 相片處理 ---------- */
 capBtn.onclick=handleCaptureClick;
 upBtn.onclick =()=>upIn.click();
-capIn.onchange=e=>{photos=[];addFiles(e.target.files);};          // 單張覆蓋
+capIn.onchange=e=>{photos=[];addFiles(e.target.files);};          // 拍照單張覆蓋
 upIn.onchange =e=>addFiles(e.target.files);
 
 async function addFiles(fileList){
   for(const f of fileList){
     if(!f.type.startsWith('image/'))continue;
-    const url=await compressFile(f);               // 壓縮後回傳 DataURL
+    const url=await compressFile(f);               // 壓縮 → DataURL
     photos.push({url,name:f.name});
   }
   renderPhotos();
@@ -217,7 +227,8 @@ function renderPhotos(){
   photosWrap.innerHTML='';
   photos.forEach((p,i)=>{
     const d=document.createElement('div');d.className='photo-thumb';
-    d.innerHTML=`<img src="${p.url}" alt=""><span data-i="${i}">✖</span>`;photosWrap.appendChild(d);
+    d.innerHTML=`<img src="${p.url}" alt=""><span data-i="${i}">✖</span>`;
+    photosWrap.appendChild(d);
   });
 }
 photosWrap.onclick=e=>{if(e.target.tagName==='SPAN'){photos.splice(+e.target.dataset.i,1);renderPhotos();}};
@@ -244,8 +255,8 @@ function compressFile(file){
 /* ---------- 儲存紀錄 ---------- */
 $('recordForm').onsubmit=e=>{
   e.preventDefault();
-  const sugarMg=+$('sugar').value || null;
-  records.unshift({                         // 最新排最前
+  const sugarMg=parseFloat(sugarInput.value) || null;
+  records.unshift({
     name:$('name').value.trim(),
     age:+$('age').value,
     date:dateInput.value,
@@ -256,11 +267,11 @@ $('recordForm').onsubmit=e=>{
   });
   e.target.reset();photos=[];renderPhotos();
   dateInput.value=new Date().toISOString().split('T')[0];
+  sugarMmolInput.value='';
   refresh();
   alert('已儲存！');
 };
 showInfoChk.onchange=refresh;
-function getNum(id){const v=$(id).value;return v===''?null:+v;}
 
 /* ---------- 工具列 ---------- */
 filterMonth.onchange=refresh;
@@ -355,9 +366,7 @@ async function handleCaptureClick(){
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
     camPrev.srcObject=stream;await camPrev.play();
     camModal.style.display='flex';
-  }catch(e){
-    capIn.click();
-  }
+  }catch(e){capIn.click();}
 }
 shutter.onclick=takeShot;camPrev.onclick=takeShot;
 function takeShot(){
