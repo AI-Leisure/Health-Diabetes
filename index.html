@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <!--  =======================================================
       糖尿病健康管理  v1.8   (2024-06-16)
-      • 相片自動壓縮（<=1024px, 0.8Q）
-      • 移除手動「估計糖份」欄，之後可由系統填
-      • 個資遮蔽 checkbox 立即刷新列表
+      • 估計糖份自動計算：mmol = mg/dL ÷ 18   ── 不再顯示輸入框
+      • 圖像壓縮：最長邊 1024px、quality 0.7
+      • showInfo 勾選即時刷新清單
     ======================================================= -->
 <html lang="zh-Hant">
 <head>
@@ -61,7 +61,6 @@ canvas{max-width:100%}
 <body>
 <header><h1>糖尿病健康管理</h1></header>
 
-<!-- ===== tabs ===== -->
 <nav>
   <button id="tabForm" class="active">新增紀錄</button>
   <button id="tabList">紀&nbsp;錄</button>
@@ -93,8 +92,8 @@ canvas{max-width:100%}
         </select>
       </label>
 
-      <label>血糖 (mmol/L，可留空)
-        <input id="sugar" type="number" step="0.1" min="1">
+      <label>血糖 (mg/dL，可留空)
+        <input id="sugar" type="number" min="20" max="600">
       </label>
 
       <!-- 食物照片 -->
@@ -107,7 +106,7 @@ canvas{max-width:100%}
         <button id="uploadBtn" type="button">📑 選擇檔案</button>
         <input id="uploadIn" type="file" accept="image/*" multiple style="display:none">
       </label>
-      <small style="color:#666">拍照（單張覆蓋）或多檔上傳；點 ✖ 可刪除縮圖。</small>
+      <small style="color:#666">所有相片自動壓縮；點 ✖ 可刪除縮圖。</small>
 
       <div id="photosWrap"></div>
 
@@ -149,29 +148,32 @@ canvas{max-width:100%}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 /* ---------- 全局變數 ---------- */
-let photos=[], records=[], chart, chartVisible=false, stream;
+let photos=[], records=[], chart, chartVisible=false;
+let stream;                      // MediaStream for camera preview
 
 /* ---------- DOM 快捷 ---------- */
 const $=id=>document.getElementById(id);
 
-/* === 表單區 === */
-const dateInput=$('date'), showInfoChk=$('showInfo');
+/* --- 表單區 DOM --- */
+const dateInput=$('date');
+const showInfoChk=$('showInfo');
 const capBtn=$('captureBtn'), upBtn=$('uploadBtn');
 const capIn=$('captureIn'),   upIn=$('uploadIn');
 const photosWrap=$('photosWrap');
 
-/* === tabs === */
+/* --- 主分頁 DOM --- */
 const tabForm=$('tabForm'), tabList=$('tabList');
 const formSec=$('formSec'), listSec=$('listSec');
 
-/* === 子 tab === */
-const subList=$('subList'), subCal=$('subCal'), listBox=$('listBox'), calBox=$('calBox');
+/* --- 子分頁 DOM --- */
+const subList=$('subList'), subCal=$('subCal');
+const listBox=$('listBox'), calBox=$('calBox');
 
-/* === 工具列 === */
+/* --- 工具列 DOM --- */
 const filterMonth=$('filterMonth');
 const toggleChartBtn=$('toggleChart'), chartWrap=document.querySelector('.chartWrap');
 
-/* === 相機 modal === */
+/* --- 相機 Modal DOM --- */
 const camModal=$('camModal'), camPrev=$('camPrev');
 const shutter=$('shutter'),   camClose=$('camClose');
 
@@ -181,31 +183,32 @@ dateInput.value=new Date().toISOString().split('T')[0];
 /* ---------- 分頁切換 ---------- */
 tabForm.onclick=()=>switchTab(true);
 tabList.onclick=()=>switchTab(false);
-function switchTab(f){
-  tabForm.classList.toggle('active',f);
-  tabList.classList.toggle('active',!f);
-  formSec.classList.toggle('active',f);
-  listSec.classList.toggle('active',!f);
-  if(!f) refresh();
+function switchTab(showForm){
+  tabForm.classList.toggle('active',showForm);
+  tabList.classList.toggle('active',!showForm);
+  formSec.classList.toggle('active',showForm);
+  listSec.classList.toggle('active',!showForm);
+  if(!showForm) refresh();
 }
 subList.onclick=()=>toggleSub(true);
 subCal.onclick =()=>toggleSub(false);
-function toggleSub(l){
-  subList.classList.toggle('active',l);
-  subCal.classList.toggle('active',!l);
-  listBox.style.display=l?'block':'none';
-  calBox.style.display =l?'none':'block';
+function toggleSub(listOn){
+  subList.classList.toggle('active',listOn);
+  subCal.classList.toggle('active',!listOn);
+  listBox.style.display=listOn?'block':'none';
+  calBox.style.display =listOn?'none':'block';
 }
 
 /* ---------- 相片處理 ---------- */
 capBtn.onclick=handleCaptureClick;
 upBtn.onclick =()=>upIn.click();
-capIn.onchange=e=>{photos=[];handleFiles(e.target.files);};   // 單張
-upIn.onchange =e=>handleFiles(e.target.files);
+capIn.onchange=e=>{photos=[];addFiles(e.target.files);};          // 單張覆蓋
+upIn.onchange =e=>addFiles(e.target.files);
 
-async function handleFiles(fileList){
+async function addFiles(fileList){
   for(const f of fileList){
-    const url=await compressToURL(f);
+    if(!f.type.startsWith('image/'))continue;
+    const url=await compressFile(f);               // 壓縮後回傳 DataURL
     photos.push({url,name:f.name});
   }
   renderPhotos();
@@ -214,34 +217,53 @@ function renderPhotos(){
   photosWrap.innerHTML='';
   photos.forEach((p,i)=>{
     const d=document.createElement('div');d.className='photo-thumb';
-    d.innerHTML=`<img src="${p.url}"><span data-i="${i}">✖</span>`;photosWrap.appendChild(d);
+    d.innerHTML=`<img src="${p.url}" alt=""><span data-i="${i}">✖</span>`;photosWrap.appendChild(d);
   });
 }
-photosWrap.onclick=e=>{
-  if(e.target.tagName==='SPAN'){photos.splice(+e.target.dataset.i,1);renderPhotos();}
-};
+photosWrap.onclick=e=>{if(e.target.tagName==='SPAN'){photos.splice(+e.target.dataset.i,1);renderPhotos();}};
+
+/* ---------- 壓縮工具 ---------- */
+function compressFile(file){
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      const max=1024;
+      let {width:w,height:h}=img;
+      if(Math.max(w,h)>max){
+        const ratio=max/Math.max(w,h);w*=ratio;h*=ratio;
+      }
+      const cvs=document.createElement('canvas');
+      cvs.width=w;cvs.height=h;
+      cvs.getContext('2d').drawImage(img,0,0,w,h);
+      cvs.toBlob(b=>res(URL.createObjectURL(b)),'image/jpeg',0.7);
+    };
+    img.src=URL.createObjectURL(file);
+  });
+}
 
 /* ---------- 儲存紀錄 ---------- */
 $('recordForm').onsubmit=e=>{
   e.preventDefault();
-  records.unshift({
+  const sugarMg=+$('sugar').value || null;
+  records.unshift({                         // 最新排最前
     name:$('name').value.trim(),
     age:+$('age').value,
     date:dateInput.value,
     meal:$('meal').value,
-    sugar:getNum('sugar'),
-    sugarEst:null,          // 之後可寫入估值
+    sugarMg,
+    sugarMmol:sugarMg? +(sugarMg/18).toFixed(1): null,
     photos:[...photos]
   });
   e.target.reset();photos=[];renderPhotos();
   dateInput.value=new Date().toISOString().split('T')[0];
+  refresh();
   alert('已儲存！');
 };
+showInfoChk.onchange=refresh;
 function getNum(id){const v=$(id).value;return v===''?null:+v;}
 
 /* ---------- 工具列 ---------- */
 filterMonth.onchange=refresh;
-showInfoChk.onchange =refresh;          // ← 勾選即時刷新
 toggleChartBtn.onclick=()=>{
   if(!chartVisible&&getChartRows().length===0){alert('目前沒有可分析的數據');return;}
   chartVisible=!chartVisible;
@@ -250,10 +272,108 @@ toggleChartBtn.onclick=()=>{
 };
 
 /* ---------- 重繪 ---------- */
-function refresh(){buildList();buildCalendar();chartVisible&&buildChart();}
+function refresh(){buildList();buildCalendar();if(chartVisible)buildChart();}
 
 /* ============ 列表 ============ */
 function buildList(){
   listBox.innerHTML='';
   const ym=filterMonth.value, show=showInfoChk.checked;
- 
+  records.filter(r=>!ym||r.date.startsWith(ym)).forEach(r=>{
+    const card=document.createElement('div');card.className='card';
+    const name=show?r.name:'****', age=show?r.age:'**';
+    card.innerHTML=`
+      <h4>${r.date}（${r.meal}）</h4>
+      <p>姓名：${name}　年齡：${age}</p>
+      ${r.sugarMg?`<p>血糖：<strong>${r.sugarMg}</strong> mg/dL　≈ ${r.sugarMmol} mmol/L</p>`:'<p>未量血糖</p>'}
+    `;
+    if(r.photos.length){
+      const at=document.createElement('div');at.className='attach';
+      r.photos.forEach(p=>{const a=document.createElement('a');a.href=p.url;a.target='_blank';
+        a.innerHTML=`<img src="${p.url}" alt="">`;at.appendChild(a);});
+      card.appendChild(at);
+    }
+    listBox.appendChild(card);
+  });
+}
+
+/* ============ 月曆 ============ */
+function buildCalendar(){
+  const ym=filterMonth.value||new Date().toISOString().slice(0,7);
+  const [y,m]=ym.split('-').map(Number);
+  const first=new Date(y,m-1,1), total=new Date(y,m,0).getDate();
+  let html='<table class="calendar"><thead><tr>';
+  '日一二三四五六'.split('').forEach(d=>html+=`<th>${d}</th>`);html+='</tr></thead><tbody><tr>';
+
+  for(let i=0;i<first.getDay();i++)html+='<td></td>';
+  for(let d=1;d<=total;d++){
+    const ds=`${ym}-${String(d).padStart(2,'0')}`;
+    const rows=records.filter(r=>r.date===ds), sugars=rows.filter(r=>r.sugarMg);
+    const avg=sugars.reduce((s,v)=>s+v.sugarMg,0)/(sugars.length||1);
+    html+=`<td><strong>${d}</strong><br>${rows.length?`筆:${rows.length}<br>Avg:${avg?avg.toFixed(0):'-'}`:''}</td>`;
+    if((first.getDay()+d)%7===0&&d!==total)html+='</tr><tr>';
+  }
+  const rest=(first.getDay()+total)%7;
+  if(rest)for(let i=0;i<7-rest;i++)html+='<td></td>';
+  html+='</tr></tbody></table>';
+  calBox.innerHTML=html;
+}
+
+/* ============ 圖表 ============ */
+function getChartRows(){
+  const ym=filterMonth.value;
+  return records.filter(r=>(!ym||r.date.startsWith(ym)) && r.sugarMg);
+}
+function buildChart(){
+  if(!chartVisible){chartWrap.style.display='none';return;}
+  const rows=getChartRows();
+  if(!rows.length){chartWrap.style.display='none';return;}
+  const labels=rows.map(r=>r.date+' '+r.meal);
+  const data=rows.map(r=>r.sugarMg);
+  chartWrap.style.display='block';
+  chart?.destroy();
+  chart=new Chart($('sugarChart'),{
+    type:'line',
+    data:{labels,datasets:[{label:'血糖 (mg/dL)',data,
+      borderColor:getCss('--c2'),backgroundColor:getCss('--c2','33'),
+      tension:.25,pointRadius:4,pointBackgroundColor:getCss('--c2')}]},
+    options:{scales:{y:{beginAtZero:false}}}
+  });
+}
+
+/* ---------- CSS 變數 ---------- */
+function getCss(n,a){const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();return a?v+a:v;}
+
+/* ======================================================
+   ===============  相機：gUM + fallback  =================
+   ====================================================== */
+async function handleCaptureClick(){
+  if(camModal.style.display==='flex'){return;}
+  if(location.protocol!=='https:'&&location.hostname!=='localhost'){
+    capIn.click();return;
+  }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    camPrev.srcObject=stream;await camPrev.play();
+    camModal.style.display='flex';
+  }catch(e){
+    capIn.click();
+  }
+}
+shutter.onclick=takeShot;camPrev.onclick=takeShot;
+function takeShot(){
+  const w=camPrev.videoWidth,h=camPrev.videoHeight;if(!w)return;
+  const max=1024, ratio=max/Math.max(w,h);
+  const nw=ratio<1?w*ratio:w, nh=ratio<1?h*ratio:h;
+  const cvs=document.createElement('canvas');cvs.width=nw;cvs.height=nh;
+  cvs.getContext('2d').drawImage(camPrev,0,0,nw,nh);
+  cvs.toBlob(b=>{
+    photos=[{url:URL.createObjectURL(b),name:`cam_${Date.now()}.jpg`}];
+    renderPhotos();closeCam();
+  },'image/jpeg',0.7);
+}
+camClose.onclick=closeCam;
+window.addEventListener('keydown',e=>{if(e.key==='Escape')closeCam();});
+function closeCam(){stream?.getTracks().forEach(t=>t.stop());stream=null;camModal.style.display='none';}
+</script>
+</body>
+</html>
