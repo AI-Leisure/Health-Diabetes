@@ -47,6 +47,10 @@ input[type=checkbox]{width:1.2rem;height:1.2rem;margin-right:.4rem}
 .photo{
   width:80px;height:80px;border:1px solid #bbb;border-radius:var(--r);
   position:relative;overflow:hidden;cursor:pointer;
+  transition: transform 0.2s;
+}
+.photo:hover{
+  transform: scale(1.05);
 }
 .photo img{width:100%;height:100%;object-fit:cover}
 .photo em{
@@ -202,6 +206,21 @@ canvas{max-width:100%;height:240px!important}
   cursor: pointer;
 }
 
+.img-preview-edit {
+  margin-top: 15px;
+  padding: 8px 16px;
+  background-color: var(--blue);
+  color: white;
+  border: none;
+  border-radius: var(--r);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.img-preview-edit:hover {
+  background-color: #0056b3;
+}
+
 .list-actions {
   position: absolute;
   top: 10px;
@@ -352,6 +371,7 @@ canvas{max-width:100%;height:240px!important}
   <div class="img-preview-content">
     <img id="previewImg" src="" alt="食物照片預覽">
     <div class="img-preview-caption" id="previewCaption"></div>
+    <button id="previewEditBtn" class="img-preview-edit">編輯食物</button>
   </div>
 </div>
 
@@ -491,7 +511,7 @@ canvas{max-width:100%;height:240px!important}
 const $=id=>document.getElementById(id);
 const today=()=>new Date().toISOString().split('T')[0];
 
-// Worker 端點 - 新增
+// Worker 端點
 const WORKER_ENDPOINT = 'https://off-proxy.leisure9654.workers.dev/identify-food';
 
 let photos=[];
@@ -582,7 +602,7 @@ function updateStatus(msg) {
   $('statusMsg').textContent = msg;
 }
 
-// 更新進度條 - 新增
+// 更新進度條
 function updateAIProgress(percent) {
   const progressBar = $('aiProgressBar');
   const progressContainer = $('aiProgress');
@@ -635,11 +655,11 @@ window.addEventListener('DOMContentLoaded', function() {
   // 渲染用户界面
   render();
   
-  // 測試 Worker 連接 - 新增
+  // 測試 Worker 連接
   testWorkerConnection();
 });
 
-// 測試 Worker 連接 - 新增
+// 測試 Worker 連接
 function testWorkerConnection() {
   fetch('https://off-proxy.leisure9654.workers.dev/health')
     .then(response => {
@@ -753,27 +773,6 @@ function initModals() {
     }
   };
   
-  // 保存糖分按鈕
-  $('saveSugarBtn').onclick = function() {
-    if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
-      const selectedFood = $('foodTypeSelect').value;
-      const value = parseFloat($('editSugarValue').value);
-      
-      if (selectedFood) {
-        photos[currentEditingPhotoIndex].label = selectedFood;
-      }
-      
-      if (!isNaN(value)) {
-        photos[currentEditingPhotoIndex].sugar = value;
-        photos[currentEditingPhotoIndex].state = 'done';
-        photos[currentEditingPhotoIndex].manual = true;
-        renderPhotos();
-        updateSugarSum(); // 更新糖分總和
-      }
-    }
-    $('editModal').style.display = 'none';
-  };
-  
   // 編輯記錄表單
   $('editRecordForm').onsubmit = function(e) {
     e.preventDefault();
@@ -827,8 +826,31 @@ function setupEventListeners() {
   // 表單提交
   $('form').onsubmit = saveNewRecord;
   
-  // 照片縮圖點擊事件
-  $('photosWrap').onclick = handlePhotoClick;
+  // 保存糖分按鈕
+  $('saveSugarBtn').onclick = function() {
+    if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
+      const selectedFood = $('foodTypeSelect').value;
+      const value = parseFloat($('editSugarValue').value);
+      
+      if (selectedFood) {
+        photos[currentEditingPhotoIndex].label = selectedFood;
+        // 如果有對應的糖分數據，使用它
+        if (sugarValues[selectedFood] && !isNaN(sugarValues[selectedFood].sugar)) {
+          photos[currentEditingPhotoIndex].sugar = sugarValues[selectedFood].sugar;
+        }
+      }
+      
+      if (!isNaN(value)) {
+        photos[currentEditingPhotoIndex].sugar = value;
+      }
+      
+      photos[currentEditingPhotoIndex].state = 'done';
+      photos[currentEditingPhotoIndex].manual = true;
+      renderPhotos(); // 重新渲染照片
+      updateSugarSum(); // 更新糖分總和
+    }
+    $('editModal').style.display = 'none';
+  };
 }
 
 // 切換個人資料顯示
@@ -865,7 +887,7 @@ function toggleChart() {
 }
 
 /* ---------- 照片處理 ---------------------------------- */
-// 添加照片文件 - 已修改為使用 Worker
+// 添加照片文件
 async function addFiles(fs) {
   if (!fs || !fs.length) return;
   
@@ -897,7 +919,7 @@ async function addFiles(fs) {
   }
 }
 
-// 使用 Worker 識別食物 - 新函數
+// 使用 Worker 識別食物
 async function identifyFoodWithWorker(photo, index) {
   updateStatus('正在分析照片...');
   updateAIProgress(10);
@@ -992,7 +1014,7 @@ async function identifyFoodWithWorker(photo, index) {
       updateSugarSum();
       
       // 彈出編輯窗口讓用戶選擇正確的食物類型
-      openEditModal(index);
+      openEditModal(null, index);
     }
     updateAIProgress(100);
   }
@@ -1379,57 +1401,27 @@ function combinedFoodDecision(colorFeatures, fileNameHint, shapeFeatures) {
   return 'rice'; // 默認值
 }
 
-// 處理照片縮圖點擊事件
-function handlePhotoClick(e) {
-  // 阻止事件冒泡
-  e.stopPropagation();
-  
-  // 刪除照片
-  if (e.target.dataset.idx) {
-    const i = parseInt(e.target.dataset.idx);
-    photos.splice(i, 1);
-    renderPhotos();
-    updateSugarSum();
-    return;
-  }
-  
-  // 編輯糖分
-  if (e.target.dataset.edit) {
-    const i = parseInt(e.target.dataset.edit);
-    openEditModal(i);
-    return;
-  }
-  
-  // 預覽照片 (點擊照片區域但不是按鈕)
-  if (e.target.tagName === 'IMG' || e.target.classList.contains('photo')) {
-    const index = parseInt(e.target.closest('.photo').dataset.index);
-    if (!isNaN(index) && index >= 0 && index < photos.length) {
-      openPreviewModal(photos[index]);
-    }
-  }
+/* ---------- 照片操作 ---------------------------------- */
+// 照片預覽處理函數
+function handlePhotoPreview(index) {
+  if (index < 0 || index >= photos.length) return;
+  openPreviewModal(photos[index], index);
 }
 
-// 打開照片預覽模態框
-function openPreviewModal(photo) {
-  $('previewImg').src = photo.url;
-  
-  // 設置標題
-  let caption = '';
-  if (photo.label === 'non-food') {
-    caption = '非食物 (0 g 糖分)';
-  } else if (photo.label && sugarValues[photo.label]) {
-    caption = `${sugarValues[photo.label].name}: ${photo.sugar} g 糖分/100g`;
-  } else {
-    caption = `糖分: ${photo.sugar} g/100g`;
-  }
-  $('previewCaption').textContent = caption;
-  
-  // 顯示模態框
-  $('imgPreviewModal').style.display = 'block';
+// 刪除照片功能，阻止冒泡
+function deletePhoto(event, index) {
+  event.stopPropagation(); // 阻止事件冒泡到預覽
+  photos.splice(index, 1);
+  renderPhotos();
+  updateSugarSum();
 }
 
-// 打開編輯糖分模態框
-function openEditModal(index) {
+// 打開編輯模態框，阻止冒泡
+function openEditModal(event, index) {
+  if (event) {
+    event.stopPropagation(); // 阻止事件冒泡到預覽
+  }
+  
   if (index < 0 || index >= photos.length) return;
   
   const photo = photos[index];
@@ -1447,7 +1439,7 @@ function openEditModal(index) {
     $('aiResult').textContent = '';
   }
   
-  // 設置下拉框 - 確保正確選擇當前食物類型
+  // 設置下拉框
   $('foodTypeSelect').value = photo.label || '';
   
   // 設置糖分值
@@ -1457,31 +1449,70 @@ function openEditModal(index) {
   $('editModal').style.display = 'block';
 }
 
-// 保存糖分按鈕
-$('saveSugarBtn').onclick = function() {
-  if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
-    const selectedFood = $('foodTypeSelect').value;
-    const value = parseFloat($('editSugarValue').value);
-    
-    if (selectedFood) {
-      photos[currentEditingPhotoIndex].label = selectedFood;
-      // 如果有對應的糖分數據，使用它
-      if (sugarValues[selectedFood] && !isNaN(sugarValues[selectedFood].sugar)) {
-        photos[currentEditingPhotoIndex].sugar = sugarValues[selectedFood].sugar;
-      }
-    }
-    
-    if (!isNaN(value)) {
-      photos[currentEditingPhotoIndex].sugar = value;
-    }
-    
-    photos[currentEditingPhotoIndex].state = 'done';
-    photos[currentEditingPhotoIndex].manual = true;
-    renderPhotos(); // 重新渲染照片
-    updateSugarSum(); // 更新糖分總和
+// 打開照片預覽模態框
+function openPreviewModal(photo, index) {
+  $('previewImg').src = photo.url;
+  
+  // 設置標題
+  let caption = '';
+  if (photo.label === 'non-food') {
+    caption = '非食物 (0 g 糖分)';
+  } else if (photo.label && sugarValues[photo.label]) {
+    caption = `${sugarValues[photo.label].name}: ${photo.sugar} g 糖分/100g`;
+  } else {
+    caption = `糖分: ${photo.sugar} g/100g`;
   }
-  $('editModal').style.display = 'none';
+  $('previewCaption').textContent = caption;
+  
+  // 添加編輯功能
+  if (index !== undefined) {
+    $('previewEditBtn').style.display = 'block';
+    $('previewEditBtn').onclick = function() {
+      $('imgPreviewModal').style.display = 'none';
+      openEditModal(null, index);
+    };
+  } else {
+    $('previewEditBtn').style.display = 'none';
+  }
+  
+  // 顯示模態框
+  $('imgPreviewModal').style.display = 'block';
 }
+
+// 渲染照片縮圖
+function renderPhotos() {
+  $('photosWrap').innerHTML = photos.map((p, i) => {
+    let displayName = '載入中...';
+    let displaySugar = '';
+    
+    if (p.state === 'done') {
+      if (p.label === 'non-food') {
+        displayName = '非食物';
+        displaySugar = '0 g';
+      } else if (p.label && sugarValues[p.label]) {
+        displayName = sugarValues[p.label].name;
+        displaySugar = p.sugar + ' g';
+      } else {
+        displayName = p.label || '未知';
+        displaySugar = p.sugar + ' g';
+      }
+    } else if (p.state === 'fail') {
+      displayName = '識別失敗';
+    }
+    
+    return `
+    <div class="photo" data-index="${i}" onclick="handlePhotoPreview(${i})">
+      <img src="${p.url}" alt="食物照片">
+      <em>${p.state === 'loading' ? '⏳ 識別中...' : displayName + '<br>' + displaySugar}</em>
+      <span data-idx="${i}" onclick="deletePhoto(event, ${i})">✖</span>
+      <span class="edit-sugar" data-edit="${i}" onclick="openEditModal(event, ${i})">✏️</span>
+    </div>`;
+  }).join('');
+  
+  // 更新糖分總和
+  updateSugarSum();
+}
+
 /* ---------- 記錄管理 ---------------------------------- */
 // 保存新記錄
 function saveNewRecord(e) {
@@ -1577,7 +1608,8 @@ function editRecord(recordId) {
       <div class="photo" data-record-id="${record.id}" data-photo-index="${idx}" onclick="previewRecordPhoto(${record.id}, ${idx})">
         <img src="${p.url}" alt="食物照片">
         <em>${displayName}<br>${p.sugar ? p.sugar + ' g' : '0g'}</em>
-        <span data-record-id="${record.id}" data-photo-idx="${idx}" class="delete-photo">✖</span>
+        <span data-record-id="${record.id}" data-photo-idx="${idx}" class="delete-photo" onclick="deleteRecordPhoto(event, ${record.id}, ${idx})">✖</span>
+        <span class="edit-sugar" data-record-id="${record.id}" data-photo-idx="${idx}" onclick="openRecordPhotoEditModal(event, ${record.id}, ${idx})">✏️</span>
       </div>`;
     }).join('');
     
@@ -1592,27 +1624,6 @@ function editRecord(recordId) {
   
   $('editPhotosWrap').innerHTML = photosHtml;
   
-  // 綁定刪除照片事件
-  document.querySelectorAll('.delete-photo').forEach(btn => {
-    btn.onclick = function(e) {
-      e.stopPropagation(); // 阻止事件冒泡
-      const recordId = this.dataset.recordId;
-      const photoIdx = parseInt(this.dataset.photoIdx);
-      deleteRecordPhoto(recordId, photoIdx);
-      this.closest('.photo').remove();
-      
-      // 更新糖分總和
-      const record = records.find(r => r.id == recordId);
-      if (record) {
-        const sugarSum = calculateSugarSum(record.photos);
-        const sumElem = document.querySelector('#editPhotosWrap strong');
-        if (sumElem) {
-          sumElem.textContent = `食物糖分總和: ${sugarSum} g`;
-        }
-      }
-    };
-  });
-  
   $('editRecordModal').style.display = 'block';
 }
 
@@ -1621,7 +1632,30 @@ function previewRecordPhoto(recordId, photoIdx) {
   const record = records.find(r => r.id == recordId);
   if (record && record.photos && record.photos[photoIdx]) {
     const photo = record.photos[photoIdx];
-    openPreviewModal(photo);
+    
+    // 打開預覽
+    $('previewImg').src = photo.url;
+    
+    // 設置標題
+    let caption = '';
+    if (photo.label === 'non-food') {
+      caption = '非食物 (0 g 糖分)';
+    } else if (photo.label && sugarValues[photo.label]) {
+      caption = `${sugarValues[photo.label].name}: ${photo.sugar} g 糖分/100g`;
+    } else {
+      caption = `糖分: ${photo.sugar} g/100g`;
+    }
+    $('previewCaption').textContent = caption;
+    
+    // 添加編輯功能
+    $('previewEditBtn').style.display = 'block';
+    $('previewEditBtn').onclick = function() {
+      $('imgPreviewModal').style.display = 'none';
+      openRecordPhotoEditModal(null, recordId, photoIdx);
+    };
+    
+    // 顯示模態框
+    $('imgPreviewModal').style.display = 'block';
   }
 }
 
@@ -1652,13 +1686,82 @@ function saveEditedRecord() {
   }
 }
 
+// 記錄照片編輯函數
+function openRecordPhotoEditModal(event, recordId, photoIdx) {
+  if (event) {
+    event.stopPropagation(); // 阻止事件冒泡
+  }
+  
+  const record = records.find(r => r.id == recordId);
+  if (!record || !record.photos || !record.photos[photoIdx]) return;
+  
+  const photo = record.photos[photoIdx];
+  
+  // 設置圖片
+  $('editImage').src = photo.url;
+  
+  // 設置分析結果說明
+  if (photo.source && photo.source !== 'manual') {
+    $('aiResult').textContent = `識別為: ${sugarValues[photo.label]?.name || photo.label}`;
+  } else {
+    $('aiResult').textContent = '';
+  }
+  
+  // 設置下拉框
+  $('foodTypeSelect').value = photo.label || '';
+  
+  // 設置糖分值
+  $('editSugarValue').value = photo.sugar || '';
+  
+  // 設置保存按鈕點擊處理
+  $('saveSugarBtn').onclick = function() {
+    const selectedFood = $('foodTypeSelect').value;
+    const value = parseFloat($('editSugarValue').value);
+    
+    if (selectedFood) {
+      photo.label = selectedFood;
+      // 如果有對應的糖分數據，使用它
+      if (sugarValues[selectedFood] && !isNaN(sugarValues[selectedFood].sugar)) {
+        photo.sugar = sugarValues[selectedFood].sugar;
+      }
+    }
+    
+    if (!isNaN(value)) {
+      photo.sugar = value;
+    }
+    
+    photo.state = 'done';
+    photo.manual = true;
+    
+    // 更新糖分總和
+    record.sugarSum = calculateSugarSum(record.photos);
+    
+    // 保存記錄
+    saveRecords();
+    
+    // 重新渲染列表
+    render();
+    
+    // 關閉編輯框
+    $('editModal').style.display = 'none';
+  };
+  
+  // 顯示模態框
+  $('editModal').style.display = 'block';
+}
+
 // 刪除記錄中的照片
-function deleteRecordPhoto(recordId, photoIdx) {
+function deleteRecordPhoto(event, recordId, photoIdx) {
+  event.stopPropagation(); // 阻止事件冒泡
+  
   const record = records.find(r => r.id == recordId);
   if (record && record.photos && record.photos[photoIdx]) {
     record.photos.splice(photoIdx, 1);
     record.sugarSum = calculateSugarSum(record.photos);
     saveRecords();
+    
+    // 更新視圖
+    editRecord(recordId);
   }
 }
 
