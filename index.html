@@ -919,7 +919,7 @@ async function addFiles(fs) {
   }
 }
 
-// 使用 Worker 識別食物
+// 處理 Worker 識別結果
 async function identifyFoodWithWorker(photo, index) {
   updateStatus('正在分析照片...');
   updateAIProgress(10);
@@ -963,17 +963,27 @@ async function identifyFoodWithWorker(photo, index) {
       // 獲取最可能的食物類型
       const topPrediction = result.predictions[0];
       
+      // 檢查是否有中文名稱
+      const foodLabel = topPrediction.label;
+      const foodName = topPrediction.chineseName || sugarValues[foodLabel]?.name || foodLabel;
+      
       // 確認是否為食物
-      if (topPrediction.label === 'non-food') {
+      if (foodLabel === 'non-food') {
         photo.label = 'non-food';
         photo.sugar = 0;
       } else {
         // 映射到我們的食物類別
-        let foodType = topPrediction.label;
+        let foodType = foodLabel;
         
         // 確保結果是我們支持的食物類型
         if (!sugarValues[foodType]) {
-          foodType = 'rice'; // 默認值
+          // 嘗試使用類似的食物類型
+          const similarFoods = findSimilarFoodTypes(foodType, result.features);
+          if (similarFoods.length > 0) {
+            foodType = similarFoods[0];
+          } else {
+            foodType = 'rice'; // 默認值
+          }
         }
         
         photo.label = foodType;
@@ -983,16 +993,13 @@ async function identifyFoodWithWorker(photo, index) {
       photo.state = 'done';
       photo.source = 'cloudflare-worker';
       photo.predictions = result.predictions;
-      photo.dominantColor = result.dominantColor;
+      photo.features = result.features;
       
       renderPhotos();
       updateSugarSum();
       updateAIProgress(100);
       
-      // 提示用戶識別結果
-      const displayName = photo.label === 'non-food' ? '非食物' : 
-                         (sugarValues[photo.label]?.name || photo.label);
-      updateStatus(`已識別為 ${displayName}，點擊照片可編輯`);
+      updateStatus(`已識別為 ${foodName}，點擊照片可編輯`);
     } else {
       throw new Error('無有效的識別結果');
     }
@@ -1018,6 +1025,46 @@ async function identifyFoodWithWorker(photo, index) {
     }
     updateAIProgress(100);
   }
+}
+
+// 找到相似的食物類型
+function findSimilarFoodTypes(foodType, features) {
+  // 基於主要顏色尋找相似食物
+  const dominantColor = features?.dominantColor || { r: 128, g: 128, b: 128 };
+  const { r, g, b } = dominantColor;
+  
+  // 常見食物類型列表
+  const commonFoods = Object.keys(sugarValues);
+  
+  // 簡單的顏色匹配邏輯
+  let matchingFoods = [];
+  
+  // 白色/淺色 (米飯，麵食)
+  if (r > 180 && g > 180 && b > 180) {
+    matchingFoods = ['rice', 'noodles', 'bread'].filter(f => commonFoods.includes(f));
+  } 
+  // 紅色/橙色 (蘋果，胡蘿蔔)
+  else if (r > 150 && g < 150 && b < 100) {
+    matchingFoods = ['apple', 'carrot'].filter(f => commonFoods.includes(f));
+  }
+  // 綠色 (蔬菜，沙拉)
+  else if (g > r && g > b) {
+    matchingFoods = ['vegetable', 'salad'].filter(f => commonFoods.includes(f));
+  }
+  // 黃色/橙色 (香蕉，橙子)
+  else if (r > 180 && g > 150 && b < 100) {
+    matchingFoods = ['banana', 'orange'].filter(f => commonFoods.includes(f));
+  }
+  // 褐色 (麵包，餅乾)
+  else if (r > 100 && g > 80 && r > b && g > b) {
+    matchingFoods = ['bread', 'cookie'].filter(f => commonFoods.includes(f));
+  }
+  // 其他情況，返回一些常見食物
+  else {
+    matchingFoods = ['rice', 'vegetable', 'apple'].filter(f => commonFoods.includes(f));
+  }
+  
+  return matchingFoods;
 }
 
 // 原始的本地食物識別函數 - 作為備份
