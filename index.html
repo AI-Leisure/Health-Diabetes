@@ -1447,7 +1447,7 @@ function openEditModal(index) {
     $('aiResult').textContent = '';
   }
   
-  // 設置下拉框
+  // 設置下拉框 - 確保正確選擇當前食物類型
   $('foodTypeSelect').value = photo.label || '';
   
   // 設置糖分值
@@ -1457,40 +1457,31 @@ function openEditModal(index) {
   $('editModal').style.display = 'block';
 }
 
-// 渲染照片縮圖
-function renderPhotos() {
-  $('photosWrap').innerHTML = photos.map((p, i) => {
-    let displayName = '載入中...';
-    let displaySugar = '';
+// 保存糖分按鈕
+$('saveSugarBtn').onclick = function() {
+  if (currentEditingPhotoIndex >= 0 && currentEditingPhotoIndex < photos.length) {
+    const selectedFood = $('foodTypeSelect').value;
+    const value = parseFloat($('editSugarValue').value);
     
-    if (p.state === 'done') {
-      if (p.label === 'non-food') {
-        displayName = '非食物';
-        displaySugar = '0 g';
-      } else if (p.label && sugarValues[p.label]) {
-        displayName = sugarValues[p.label].name;
-        displaySugar = p.sugar + ' g';
-      } else {
-        displayName = p.label || '未知';
-        displaySugar = p.sugar + ' g';
+    if (selectedFood) {
+      photos[currentEditingPhotoIndex].label = selectedFood;
+      // 如果有對應的糖分數據，使用它
+      if (sugarValues[selectedFood] && !isNaN(sugarValues[selectedFood].sugar)) {
+        photos[currentEditingPhotoIndex].sugar = sugarValues[selectedFood].sugar;
       }
-    } else if (p.state === 'fail') {
-      displayName = '識別失敗';
     }
     
-    return `
-    <div class="photo" data-index="${i}">
-      <img src="${p.url}" alt="食物照片">
-      <em>${p.state === 'loading' ? '⏳ 識別中...' : displayName + '<br>' + displaySugar}</em>
-      <span data-idx="${i}">✖</span>
-      <span class="edit-sugar" data-edit="${i}">✏️</span>
-    </div>`;
-  }).join('');
-  
-  // 更新糖分總和
-  updateSugarSum();
+    if (!isNaN(value)) {
+      photos[currentEditingPhotoIndex].sugar = value;
+    }
+    
+    photos[currentEditingPhotoIndex].state = 'done';
+    photos[currentEditingPhotoIndex].manual = true;
+    renderPhotos(); // 重新渲染照片
+    updateSugarSum(); // 更新糖分總和
+  }
+  $('editModal').style.display = 'none';
 }
-
 /* ---------- 記錄管理 ---------------------------------- */
 // 保存新記錄
 function saveNewRecord(e) {
