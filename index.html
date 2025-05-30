@@ -642,6 +642,29 @@ function updateSugarSum() {
 }
 
 /* ---------- 初始化 -------------------------------------- */
+  <script>
+function submitEditedFood() {
+  const name = $('customName').value.trim();
+  const amount = parseFloat($('amount').value) || 100;
+
+  if (!photos.length) {
+    alert("請先上傳或拍攝食物照片");
+    return;
+  }
+
+  photos.forEach(p => {
+    p.label = name || 'custom';
+    p.sugar = (amount / 100) * (sugarValues[name]?.sugar || 5.0);
+    p.manual = true;
+    p.state = 'done';
+  });
+
+  renderPhotos();
+  updateSugarSum();
+  alert("已套用自定義資料");
+}
+</script>
+
 window.addEventListener('DOMContentLoaded', function() {
   // 設置默認日期為今天
   $('date').value = today();
@@ -2059,27 +2082,6 @@ function renderChart() {
     document.querySelector('.chartWrap').innerHTML = `<div style="text-align:center;color:#666;padding:2rem">圖表渲染失敗: ${e.message}</div>`;
   }
 }
-<script>
-function submitEditedFood() {
-  const name = $('customName').value.trim();
-  const amount = parseFloat($('amount').value) || 100;
 
-  if (!photos.length) {
-    alert("請先上傳或拍攝食物照片");
-    return;
-  }
-
-  photos.forEach(p => {
-    p.label = name || 'custom';
-    p.sugar = (amount / 100) * (sugarValues[name]?.sugar || 5.0);
-    p.manual = true;
-    p.state = 'done';
-  });
-
-  renderPhotos();
-  updateSugarSum();
-  alert("已套用自定義資料");
-}
-</script>
 </body>
 </html>
