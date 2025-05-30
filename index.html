@@ -236,6 +236,10 @@ canvas{max-width:100%;height:240px!important}
   padding: 2px 8px;
   font-size: 0.85rem;
   cursor: pointer;
+.image-preview {
+  max-height: 60vh;
+  object-fit: contain;
+}
 }
 
 .btn-edit:hover {
@@ -246,6 +250,11 @@ canvas{max-width:100%;height:240px!important}
   color: var(--red);
 }
 
+<div id="manualInputSection" style="margin-top:1rem">
+  <label>自定義食物名稱 <input id="customName" placeholder="例如：紅豆餅"></label>
+  <label>重量 (g) <input id="amount" type="number" value="100" min="1" max="1000"></label>
+  <button type="button" onclick="submitEditedFood()" style="margin-top:0.5rem">套用自定義</button>
+</div>
 .btn-delete:hover {
   background: #ffebee;
 }
@@ -2050,5 +2059,25 @@ function renderChart() {
   }
 }
 </script>
+function submitEditedFood() {
+  const name = $('customName').value.trim();
+  const amount = parseFloat($('amount').value) || 100;
+
+  if (!photos.length) {
+    alert("請先上傳或拍攝食物照片");
+    return;
+  }
+
+  photos.forEach(p => {
+    p.label = name || 'custom';
+    p.sugar = (amount / 100) * (sugarValues[name]?.sugar || 5.0);
+    p.manual = true;
+    p.state = 'done';
+  });
+
+  renderPhotos();
+  updateSugarSum();
+  alert("已套用自定義資料");
+}
 </body>
 </html>
