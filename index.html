@@ -249,16 +249,11 @@ canvas{max-width:100%;height:240px!important}
 .btn-delete {
   color: var(--red);
 }
-
-<div id="manualInputSection" style="margin-top:1rem">
-  <label>自定義食物名稱 <input id="customName" placeholder="例如：紅豆餅"></label>
-  <label>重量 (g) <input id="amount" type="number" value="100" min="1" max="1000"></label>
-  <button type="button" onclick="submitEditedFood()" style="margin-top:0.5rem">套用自定義</button>
-</div>
+  
 .btn-delete:hover {
   background: #ffebee;
 }
-
+  
 #editRecordModal {
   overflow-y: auto;
   max-height: 90vh;
@@ -311,6 +306,12 @@ canvas{max-width:100%;height:240px!important}
     <div class="personal">
       <label>姓名 <input id="name"></label>
       <label>年齡 <input id="age" type="number" min="1" max="120"></label>
+      
+      <div id="manualInputSection" style="margin-top:1rem">
+  <label>自定義食物名稱 <input id="customName" placeholder="例如：紅豆餅"></label>
+  <label>重量 (g) <input id="amount" type="number" value="100" min="1" max="1000"></label>
+  <button type="button" onclick="submitEditedFood()" style="margin-top:0.5rem">套用自定義</button>
+</div>
     </div>
 
     <label>日期 <input id="date" type="date" required></label>
